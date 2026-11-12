@@ -1,0 +1,924 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitor Uniswap</title>
+<style>
+:root{--bg:#f7f6f3;--panel:#fff;--fg:#1f1e1b;--muted:#6b6862;--line:#e4e1da;--ok:#1a7f4b;--bad:#b42318;--warn:#a15c07;--c1:#2f6fdf;--c2:#d97a18;--c3:#7a5cc7;--band:rgba(47,111,223,.08);--grid:#ecebe6;--input:#fff}
+@media (prefers-color-scheme: dark){:root{--bg:#161614;--panel:#201f1d;--fg:#ecebe6;--muted:#a3a09a;--line:#34322e;--ok:#4cc38a;--bad:#f2766b;--warn:#e7a54a;--c1:#6b9bff;--c2:#f0a050;--c3:#a98bf0;--band:rgba(107,155,255,.1);--grid:#2b2a27;--input:#181816}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-variant-numeric:tabular-nums;line-height:1.4}
+.wrap{max-width:1200px;margin:0 auto;padding:20px 16px 48px;display:flex;flex-direction:column;gap:16px}
+h1{font-family:Georgia,"Times New Roman",serif;font-weight:400;font-size:1.7rem;margin:0;text-align:center}
+h2{font-size:1rem;font-weight:600;margin:0}
+.note{color:var(--muted);font-size:.8rem;margin:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px;display:flex;flex-direction:column;gap:10px;min-width:0}
+.bar{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end}
+.bar label{min-width:150px;flex:1}
+label{display:flex;flex-direction:column;gap:4px;font-size:.78rem;color:var(--muted)}
+input,select{font:inherit;font-size:.95rem;color:var(--fg);background:var(--input);border:1px solid var(--line);border-radius:8px;padding:7px 10px;width:100%}
+button{font:inherit;font-size:.88rem;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:8px 14px;cursor:pointer;white-space:nowrap}
+button.primary{background:var(--c1);border-color:var(--c1);color:#fff}
+button:disabled{opacity:.5;cursor:default}
+.inputs{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,13rem),1fr));gap:12px}
+.tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,11rem),1fr));gap:12px}
+.tile .l{color:var(--muted);font-size:.78rem}
+.tile .v{font-family:Georgia,"Times New Roman",serif;font-size:1.6rem;display:flex;flex-direction:column}
+.tile .v .small{font-size:1.1rem}
+.nowrap{white-space:nowrap}
+.ok{color:var(--ok)}.bad{color:var(--bad)}.warn{color:var(--warn)}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,22rem),1fr));gap:12px}
+.full{grid-column:1/-1}
+.tbl{overflow-x:auto}
+table{border-collapse:collapse;width:100%;font-size:.9rem}
+th,td{text-align:right;padding:6px 8px;border-bottom:1px solid var(--line);white-space:nowrap}
+th{color:var(--muted);font-weight:600;font-size:.76rem}
+th:first-child,td:first-child{text-align:left}
+dl.facts{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,10rem),1fr));gap:10px;margin:0}
+dl.facts dt{color:var(--muted);font-size:.76rem}dl.facts dd{margin:0}
+.chart{position:relative;min-height:320px}
+.tip{position:absolute;background:var(--panel);border:1px solid var(--line);border-radius:8px;box-shadow:0 4px 14px rgba(0,0,0,.15);padding:6px 9px;font-size:.78rem;pointer-events:none;white-space:nowrap;top:24px}
+.sw{display:inline-block;width:.6rem;height:.6rem;border-radius:2px;margin-right:.35rem}
+.lbar-total{font-family:Georgia,"Times New Roman",serif;font-size:1.6rem;margin:0 0 10px}.lbar-total .sub{display:block;font-family:system-ui,sans-serif;font-size:.75rem;color:var(--muted);margin-bottom:2px}.lbar{position:relative;isolation:isolate;display:flex;gap:0;height:26px;padding:0;border-radius:999px;border:none;box-shadow:none}.lbar .seg{position:relative;height:100%;min-width:4px;border-radius:0;border:none;box-shadow:0 0 4px var(--g),0 0 9px var(--g);display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:600;color:#fff;text-shadow:0 0 4px rgba(0,0,0,.6);overflow:hidden;white-space:nowrap}.lbar .seg:first-child{border-radius:999px 0 0 999px}.lbar .seg:last-child{border-radius:0 999px 999px 0}.lbar .seg:only-child{border-radius:999px}.lbar .seg::before{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--g);z-index:1}.lbar .seg span{position:relative;z-index:2}.lbar .seg.empty{background:var(--line);box-shadow:none;border-color:var(--line);color:var(--muted);text-shadow:none;width:100%}.lbar-legend{flex-direction:row;flex-wrap:wrap;gap:8px 18px;margin-top:12px;min-width:0}.lbar-legend .sw{box-shadow:0 0 4px var(--g)}
+.donut-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,24rem),1fr));gap:18px}.donut-block h3{margin:0 0 8px;font-size:.9rem;font-weight:600;color:var(--muted)}.donut-wrap{display:flex;flex-wrap:wrap;align-items:center;gap:18px}.donut-wrap svg{width:200px;height:200px;flex:0 0 200px}.donut-legend{display:flex;flex-direction:column;gap:8px;font-size:.9rem;min-width:200px}.donut-legend .row{display:flex;align-items:center;gap:8px}.donut-legend .sw{width:12px;height:12px;border-radius:3px;flex:0 0 12px}.donut-legend .sub{color:var(--muted);font-size:.8rem}
+.legend{display:flex;flex-wrap:wrap;gap:14px;font-size:.78rem;color:var(--muted)}
+.status{font-size:.82rem;color:var(--muted)}
+.status.err{color:var(--bad)}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.chip{border:1px solid var(--line);border-radius:999px;padding:4px 10px;font-size:.82rem;cursor:pointer;background:var(--panel)}
+.chip.on{border-color:var(--c1);color:var(--c1)}
+.chip .x{margin-left:6px;color:var(--muted)}
+.hidden{display:none!important}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1 style="text-align:center;width:100%">Monitor de posiciones Uniswap (v2, v3 y v4)</h1>
+    <p class="note">Lee tu posición directamente de la blockchain de Ethereum (contratos de Uniswap v2, v3 o v4, según la pool, y oráculos Chainlink). Tus valores y registros se guardan en este navegador (no se envían a ningún servidor).</p>
+  </header>
+
+  <section class="card">
+    <h2>Posición</h2>
+    <div class="bar">
+      <label>Tipo de pool<select id="ptype"><option value="v3">Uniswap v3 · NFT</option><option value="v4">Uniswap v4 · NFT</option><option value="v2">Uniswap v2 · par</option></select></label>
+      <label id="lblId">ID del NFT de la posición<input id="tokenId" inputmode="numeric" placeholder="ej. 1385639"></label>
+      <button class="primary" id="btnLoad">Cargar / actualizar</button>
+      <label>…o busca por wallet<input id="wallet" placeholder="0x…"></label>
+      <button id="btnWallet">Buscar posiciones</button>
+    </div>
+    <div class="chips" id="saved"></div>
+    <div class="chips" id="found"></div>
+    <p class="status" id="status">Escribe un ID y pulsa "Cargar / actualizar".</p>
+  </section>
+
+  <div id="main" class="hidden" style="display:flex;flex-direction:column;gap:16px">
+    <section class="card">
+      <h2>Datos de entrada (editables, se guardan para esta posición)</h2>
+      <div class="inputs">
+        <label>Fecha y hora de apertura (hora local)<input id="in_open" type="datetime-local"></label>
+        <label><span id="lb_entry">Precio de entrada</span><input id="in_entry" type="number" step="any" min="0"></label>
+        <label><span id="lb_entryusd">Precio USD del activo base en la entrada</span><input id="in_entryusd" type="number" step="any" min="0"></label>
+        <label>Capital depositado (USD) — vacío = calculado<input id="in_capital" type="number" step="any" min="0"></label>
+        <label>Comisiones ya cobradas (USD)<input id="in_collected" type="number" step="any" min="0"></label>
+        <label id="wrap_usd0" class="hidden"><span id="lb_usd0">Precio USD token0</span><input id="in_usd0" type="number" step="any" min="0"></label>
+      </div>
+      <div class="bar">
+        <button id="btnInvert">Invertir precio</button>
+        <span class="note" id="capNote"></span>
+      </div>
+    </section>
+
+    <p id="take" style="margin:0;font-size:1rem"></p>
+
+    <section class="tiles">
+      <div class="card tile"><span class="l">APR por comisiones</span><span class="v" id="t_apr">—</span><span class="note" id="t_apr_n"></span></div>
+      <div class="card tile"><span class="l">Rendimiento medio diario</span><span class="v" id="t_daily">—</span><span class="note" id="t_daily_n"></span></div>
+      <div class="card tile"><span class="l" id="t_tokB_l">Rendimiento token 1</span><span class="v" id="t_tokB">—</span><span class="note" id="t_tokB_n"></span></div>
+      <div class="card tile"><span class="l" id="t_tokQ_l">Rendimiento token 2</span><span class="v" id="t_tokQ">—</span><span class="note" id="t_tokQ_n"></span></div>
+      <div class="card tile"><span class="l">Comisiones</span><span class="v" id="t_fees">—</span><span class="note" id="t_fees_n"></span></div>
+      <div class="card tile"><span class="l"><span id="t_total_lbl">Posición v3</span> + comisiones</span><span class="v" id="t_total">—</span><span class="note" id="t_total_n"></span></div>
+      <div class="card tile"><span class="l"><span id="t_vshold_lbl">v3</span> frente a HODL</span><span class="v" id="t_vshold">—</span><span class="note" id="t_vshold_n"></span></div>
+      <div class="card tile"><span class="l">Valor actual HODL</span><span class="v" id="t_hold">—</span><span class="note" id="t_hold_n"></span></div>
+      <div class="card tile"><span class="l">Estado del rango</span><span class="v" id="t_range">—</span><span class="note" id="t_range_n"></span><span class="note" id="t_range_p" style="white-space:pre-line;font-size:.72rem"></span></div>
+      <div class="card tile"><span class="l">Eficiencia de capital vs v2</span><span class="v" id="t_eff">—</span><span class="note" id="t_eff_n"></span></div>
+    </section>
+
+    <section class="card">
+      <h2>Distribución de activos</h2>
+      <div class="donut-pair">
+        <div class="donut-block">
+          <h3>En la pool</h3>
+          <div class="lbar-total" id="donutTot">—</div>
+          <div class="lbar" id="donut" role="img" aria-label="Distribución de activos en la pool"></div>
+          <div id="donutLegend" class="donut-legend lbar-legend"></div>
+        </div>
+        <div class="donut-block">
+          <h3>En comisiones</h3>
+          <div class="lbar-total" id="donutFeesTot">—</div>
+          <div class="lbar" id="donutFees" role="img" aria-label="Distribución de activos en comisiones"></div>
+          <div id="donutFeesLegend" class="donut-legend lbar-legend"></div>
+        </div>
+      </div>
+      <p class="note" id="donutNote">Valores con precios de Chainlink.</p>
+    </section>
+
+    <section class="card">
+      <h2 id="cmpTitle">Comparación: v3 vs v2 vs HODL</h2>
+      <p class="note">Valores en USD al precio actual. v2 es una posición hipotética con el mismo capital en rango completo, el mismo volumen y la misma tarifa.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Estrategia</th><th>Tokens hoy</th><th>Comisiones</th><th>Total</th><th>Resultado</th><th>vs HODL</th><th>APR comisiones</th></tr></thead>
+        <tbody id="cmp"></tbody>
+      </table></div>
+      <p class="note" id="eff"></p>
+    </section>
+
+    <div class="grid2">
+      <section class="card full">
+        <h2>Curvas de valor y rango</h2>
+        <p class="note">Valor de los tokens (sin comisiones) en USD según el precio, con el activo de cotización a su precio actual. Franja sombreada: tu rango.</p>
+        <div class="bar" style="align-items:center"><label style="flex-direction:row;align-items:center;gap:6px;color:var(--fg);font-size:.85rem"><input type="checkbox" id="chkFees" style="width:auto"> Incluir comisiones en la curva</label></div>
+        <div class="legend" id="legend"></div>
+        <div class="chart" id="chart"></div>
+      </section>
+      <section class="card full">
+        <h2>Datos on-chain de la posición</h2>
+        <dl class="facts" id="facts"></dl>
+        <p class="note" id="readAt"></p>
+      </section>
+    </div>
+
+    <section class="card">
+      <h2>Registro de entrada</h2>
+      <p class="note">Se guarda un registro por posición en este navegador y se actualiza cada vez que cambias un dato de entrada. Descárgalo como CSV para abrirlo en Excel. Cada navegador o dispositivo guarda sus propios registros.</p>
+      <div class="bar"><button id="btnCsv">Descargar CSV</button><button id="btnClearHist">Borrar registros</button><span class="note" id="histNote"></span></div>
+    </section>
+
+    <section class="card">
+      <h2>Cómo se calcula</h2>
+      <p class="note" id="howNote">Las cantidades actuales y las comisiones sin reclamar se leen del contrato de Uniswap v3 (positions y una simulación de collect). Los precios USD de WETH y WBTC vienen de Chainlink (ETH/USD y BTC/USD); USDC, USDT y DAI se toman a $1. Las cantidades iniciales se calculan con la liquidez actual al precio de entrada (exacto si no añadiste ni retiraste liquidez después). HODL guarda esas cantidades iniciales. v2 reparte el capital 50/50 en rango completo; sus comisiones = comisiones de tu posición ÷ eficiencia de capital, suponiendo que el precio estuvo siempre en rango. APR = comisiones / capital × 365 / días.</p>
+    </section>
+  </div>
+</div>
+
+<script>
+// ===== Lectura on-chain y almacenamiento local (antes Codigo.gs en Google Apps Script) =====
+const BACKEND = (function () {
+'use strict';
+var RPCS = ['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org']; // publicnode no sirve estado histórico; drpc sí (se usa de respaldo)
+var NPM_V3 = '0xc36442b4a4522e871399cd717abdd847ab11fe88';
+var FACTORY_V3 = '0x1f98431c8ad98523631ae4a59f267346ea31f984';
+var NPM_V4 = '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e';
+var SV_V4 = '0x7ffe42c4a5deea5b0fec41c94c136cf115597227';
+var FACTORY_V2 = '0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f';
+var FEEDS = { ETH: '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', BTC: '0xf4030086522a5beea4988f8ca5b36dbc97bee88c' };
+var ZERO = '0x0000000000000000000000000000000000000000';
+var TOKENS = {
+  '0x0000000000000000000000000000000000000000': { feed: 'ETH', native: true },
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { feed: 'ETH' },
+  '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { feed: 'BTC' },
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { usd: 1, stable: true },
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': { usd: 1, stable: true },
+  '0x6b175474e89094c44da98b954eedeac495271d0f': { usd: 1, stable: true }
+};
+var FULL_TICK = 887220;
+
+// ---------- RPC ----------
+async function rpcBatch_(calls) {
+  var last;
+  for (var u = 0; u < RPCS.length; u++) {
+    try {
+      var body = calls.map(function (c, i) { return { jsonrpc: '2.0', id: i, method: c.method, params: c.params }; });
+      var resp = await fetch(RPCS[u], { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (!resp.ok) throw new Error('RPC HTTP ' + resp.status);
+      var j = await resp.json();
+      if (!Array.isArray(j)) throw new Error((j && j.error && j.error.message) || 'respuesta RPC no válida');
+      var byId = {}; j.forEach(function (x) { byId[x.id] = x; });
+      return calls.map(function (c, i) {
+        var x = byId[i];
+        if (!x) throw new Error('falta respuesta RPC');
+        if (x.error) throw new Error(x.error.message || 'error RPC');
+        return x.result;
+      });
+    } catch (e) { last = e; }
+  }
+  throw last;
+}
+function ec_(to, data, from, block) { var o = { to: to, data: data }; if (from) o.from = from; return { method: 'eth_call', params: [o, block || 'latest'] }; }
+function pad_(h) { h = String(h).replace(/^0x/, '').toLowerCase(); while (h.length < 64) h = '0' + h; return h; }
+function hexN_(n) { return pad_(BigInt(n).toString(16)); }
+function encI_(n) { return BigInt.asUintN(256, BigInt(n)).toString(16).padStart(64, '0'); }
+function words_(h) { return String(h).replace(/^0x/, '').match(/.{64}/g) || []; }
+function big_(w) { return BigInt('0x' + w); }
+function int24_(w) { return Number(BigInt.asIntN(24, big_(w))); }
+function addr_(w) { return '0x' + w.slice(24).toLowerCase(); }
+function decodeString_(h) {
+  try {
+    var hex = String(h).replace(/^0x/, ''), w = words_(h), bytes;
+    if (w.length >= 3) { var len = Number(big_(w[1])); bytes = hex.slice(128, 128 + len * 2); }
+    else bytes = w[0].replace(/(00)+$/, '');
+    var arr = bytes.match(/.{2}/g).map(function (b) { var v = parseInt(b, 16); return v > 127 ? v - 256 : v; });
+    return new TextDecoder().decode(Uint8Array.from(arr.map(function (v) { return v & 255; }))).replace(/\u0000/g, '');
+  } catch (e) { return '?'; }
+}
+async function tokenMeta_(address) {
+  if (address === ZERO) return { address: ZERO, decimals: 18, symbol: 'ETH' };
+  var r = await rpcBatch_([ec_(address, '0x313ce567'), ec_(address, '0x95d89b41')]);
+  return { address: address, decimals: Number(big_(words_(r[0])[0])), symbol: decodeString_(r[1]) };
+}
+async function feedPrices_() {
+  var r = await rpcBatch_([ec_(FEEDS.ETH, '0xfeaf968c'), ec_(FEEDS.BTC, '0xfeaf968c')]);
+  return { ETH: Number(big_(words_(r[0])[1])) / 1e8, BTC: Number(big_(words_(r[1])[1])) / 1e8 };
+}
+function usdMap_(tokens, feeds) {
+  var usd = {}, stable = {};
+  tokens.forEach(function (t) {
+    var m = TOKENS[t.address];
+    if (m && m.feed) usd[t.address] = feeds[m.feed];
+    else if (m && m.usd) usd[t.address] = m.usd;
+    stable[t.address] = !!(m && m.stable);
+  });
+  return { usd: usd, stable: stable };
+}
+
+// ---------- v3 ----------
+async function readPosition_v3_(id) {
+  var r = await rpcBatch_([ec_(NPM_V3, '0x99fbab88' + hexN_(id)), ec_(NPM_V3, '0x6352211e' + hexN_(id)), { method: 'eth_getBlockByNumber', params: ['latest', false] }]);
+  var w = words_(r[0]);
+  var owner = addr_(words_(r[1])[0]);
+  var pos = { id: id, owner: owner, token0: addr_(w[2]), token1: addr_(w[3]), fee: Number(big_(w[4])), tl: int24_(w[5]), tu: int24_(w[6]), liquidity: big_(w[7]).toString() };
+  if (/^0x0+$/.test(pos.token0)) throw new Error('La posición no existe.');
+  var max = pad_('ffffffffffffffffffffffffffffffff');
+  var r2 = await rpcBatch_([
+    ec_(NPM_V3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner),
+    ec_(FACTORY_V3, '0x1698ee82' + pad_(pos.token0) + pad_(pos.token1) + hexN_(pos.fee)),
+    ec_(pos.token0, '0x313ce567'), ec_(pos.token0, '0x95d89b41'),
+    ec_(pos.token1, '0x313ce567'), ec_(pos.token1, '0x95d89b41')
+  ]);
+  var cw = words_(r2[0]);
+  pos.fees0raw = big_(cw[0]).toString(); pos.fees1raw = big_(cw[1]).toString();
+  pos.pool = addr_(words_(r2[1])[0]);
+  pos.t0 = { address: pos.token0, decimals: Number(big_(words_(r2[2])[0])), symbol: decodeString_(r2[3]) };
+  pos.t1 = { address: pos.token1, decimals: Number(big_(words_(r2[4])[0])), symbol: decodeString_(r2[5]) };
+  var s0 = words_((await rpcBatch_([ec_(pos.pool, '0x3850c7bd')]))[0]);
+  pos.sqrtPriceX96 = big_(s0[0]).toString(); pos.tick = int24_(s0[1]);
+  var um = usdMap_([pos.t0, pos.t1], await feedPrices_());
+  pos.usd = um.usd; pos.stable = um.stable;
+  pos.kind = 'v3';
+  pos.block = parseInt(r[2].number, 16); pos.ts = parseInt(r[2].timestamp, 16);
+  // Comisiones de las últimas ~24 h (7200 bloques): diferencia del acumulado de collect() entre ahora y hace 24 h.
+  try {
+    var past = await rpcBatch_([ec_(NPM_V3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner, '0x' + (pos.block - 7200).toString(16))]);
+    var pw = words_(past[0]);
+    pos.fees24_0raw = (big_(cw[0]) - big_(pw[0])).toString();
+    pos.fees24_1raw = (big_(cw[1]) - big_(pw[1])).toString();
+  } catch (e) { pos.fees24_0raw = null; pos.fees24_1raw = null; }
+  return pos;
+}
+
+// ---------- v4 ----------
+function poolIdOf_(c0, c1, fee, tickSpacing, hooks) {
+  return '0x' + keccak256Hex_(pad_(c0) + pad_(c1) + hexN_(fee) + encI_(tickSpacing) + pad_(hooks));
+}
+async function readPosition_v4_(id) {
+  var tid = hexN_(id);
+  var r = await rpcBatch_([
+    ec_(NPM_V4, '0x7ba03aad' + tid),      // getPoolAndPositionInfo(tokenId)
+    ec_(NPM_V4, '0x1efeed33' + tid),      // getPositionLiquidity(tokenId)
+    ec_(NPM_V4, '0x6352211e' + tid),      // ownerOf(tokenId)
+    { method: 'eth_getBlockByNumber', params: ['latest', false] }
+  ]);
+  var w = words_(r[0]);
+  if (w.length < 6) throw new Error('La posición v4 no existe.');
+  var c0 = addr_(w[0]), c1 = addr_(w[1]), fee = Number(big_(w[2])), tsp = int24_(w[3]), hooks = addr_(w[4]);
+  var info = big_(w[5]);
+  var tl = Number(BigInt.asIntN(24, (info >> BigInt(8)) & BigInt(0xffffff)));
+  var tu = Number(BigInt.asIntN(24, (info >> BigInt(32)) & BigInt(0xffffff)));
+  var poolId = poolIdOf_(c0, c1, fee, tsp, hooks);
+  var sv = await rpcBatch_([
+    ec_(SV_V4, '0xc815641c' + pad_(poolId)),                                              // getSlot0(poolId)
+    ec_(SV_V4, '0xdacf1d2f' + pad_(poolId) + pad_(NPM_V4) + encI_(tl) + encI_(tu) + tid), // getPositionInfo(poolId, owner, tl, tu, salt)
+    ec_(SV_V4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu))                       // getFeeGrowthInside(poolId, tl, tu)
+  ]);
+  var s0 = words_(sv[0]);
+  var pi = words_(sv[1]), fg = words_(sv[2]);
+  var M256 = (BigInt(1) << BigInt(256)) - BigInt(1), Q128 = BigInt(1) << BigInt(128);
+  var liqPos = big_(pi[0]);
+  var d0 = (big_(fg[0]) - big_(pi[1])) & M256, d1 = (big_(fg[1]) - big_(pi[2])) & M256;
+  var t0 = await tokenMeta_(c0), t1 = await tokenMeta_(c1);
+  var um = usdMap_([t0, t1], await feedPrices_());
+  var pos = {
+    id: 'v4:' + id, owner: addr_(words_(r[2])[0]), token0: c0, token1: c1, fee: fee,
+    tl: tl, tu: tu, liquidity: big_(words_(r[1])[0]).toString(),
+    fees0raw: (liqPos * d0 / Q128).toString(), fees1raw: (liqPos * d1 / Q128).toString(),
+    pool: poolId, sqrtPriceX96: big_(s0[0]).toString(), tick: int24_(s0[1]),
+    t0: t0, t1: t1, usd: um.usd, stable: um.stable, kind: 'v4',
+    block: parseInt(r[3].number, 16), ts: parseInt(r[3].timestamp, 16)
+  };
+  // Comisiones de las últimas ~24 h (7200 bloques): liquidez × crecimiento de feeGrowthInside en ese lapso.
+  // Solo es válido si la liquidez no cambió en el periodo; si cambió, se deja sin dato.
+  pos.fees24_0raw = null; pos.fees24_1raw = null;
+  try {
+    var tag = '0x' + (pos.block - 7200).toString(16);
+    var old = await rpcBatch_([
+      ec_(SV_V4, '0xdacf1d2f' + pad_(poolId) + pad_(NPM_V4) + encI_(tl) + encI_(tu) + tid, null, tag),
+      ec_(SV_V4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu), null, tag)
+    ]);
+    var piOld = words_(old[0]), fgOld = words_(old[1]);
+    if (big_(piOld[0]) === liqPos && liqPos > BigInt(0)) {
+      var g0 = (big_(fg[0]) - big_(fgOld[0])) & M256, g1 = (big_(fg[1]) - big_(fgOld[1])) & M256;
+      pos.fees24_0raw = (liqPos * g0 / Q128).toString();
+      pos.fees24_1raw = (liqPos * g1 / Q128).toString();
+    }
+  } catch (e) { /* sin dato histórico */ }
+  return pos;
+}
+
+// ---------- v2 ----------
+async function readPosition_v2_(pair, wallet) {
+  pair = String(pair).trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(pair)) throw new Error('Dirección de par no válida');
+  var hasWallet = /^0x[0-9a-f]{40}$/i.test(wallet || '');
+  var calls = [ec_(pair, '0x0902f1ac'), ec_(pair, '0x0dfe1681'), ec_(pair, '0xd21220a7'), ec_(pair, '0x18160ddd'), { method: 'eth_getBlockByNumber', params: ['latest', false] }];
+  if (hasWallet) calls.push(ec_(pair, '0x70a08231' + pad_(wallet)));
+  var r = await rpcBatch_(calls);
+  var rw = words_(r[0]);
+  var r0 = big_(rw[0]), r1 = big_(rw[1]);
+  if (r0 === BigInt(0) || r1 === BigInt(0)) throw new Error('El par no tiene liquidez o no existe.');
+  var total = big_(words_(r[3])[0]);
+  var share = hasWallet ? Number(big_(words_(r[5])[0])) / Number(total) : 1;
+  var t0 = await tokenMeta_(addr_(words_(r[1])[0])), t1 = await tokenMeta_(addr_(words_(r[2])[0]));
+  var um = usdMap_([t0, t1], await feedPrices_());
+  var L = share * Math.sqrt(Number(r0) * Number(r1));
+  var sp = Math.sqrt(Number(r1) / Number(r0)) * Math.pow(2, 96);
+  var block = r[4];
+  return {
+    id: 'v2:' + pair, owner: hasWallet ? wallet.toLowerCase() : pair, token0: t0.address, token1: t1.address, fee: 3000,
+    tl: -FULL_TICK, tu: FULL_TICK, liquidity: String(BigInt(Math.round(L))), fees0raw: '0', fees1raw: '0',
+    pool: pair, sqrtPriceX96: String(BigInt(Math.round(sp))), tick: 0,
+    t0: t0, t1: t1, usd: um.usd, stable: um.stable, kind: 'v2', shareLabel: hasWallet ? 'Tu parte del par: ' + (share * 100).toFixed(4) + '%' : 'Pool completo (sin wallet)',
+    block: parseInt(block.number, 16), ts: parseInt(block.timestamp, 16)
+  };
+}
+
+/** Punto de entrada único. type: 'v2' | 'v3' | 'v4'. */
+async function readAny(type, id, wallet) {
+  id = String(id || '').trim();
+  var pos;
+  if (type === 'v2') pos = await readPosition_v2_(id, wallet);
+  else {
+    if (!/^\d+$/.test(id)) throw new Error('ID no válido');
+    pos = type === 'v4' ? await readPosition_v4_(id) : await readPosition_v3_(id);
+  }
+  return pos;
+}
+
+/** Lista las posiciones v3 de una wallet. */
+async function positionsOf(wallet) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('Dirección no válida');
+  var w = wallet.toLowerCase();
+  var n = Number(big_(words_((await rpcBatch_([ec_(NPM_V3, '0x70a08231' + pad_(w))]))[0])[0]));
+  n = Math.min(n, 50);
+  if (!n) return [];
+  var idCalls = []; for (var i = 0; i < n; i++) idCalls.push(ec_(NPM_V3, '0x2f745c59' + pad_(w) + hexN_(i)));
+  var ids = (await rpcBatch_(idCalls)).map(function (h) { return big_(words_(h)[0]).toString(); });
+  var ps = await rpcBatch_(ids.map(function (id) { return ec_(NPM_V3, '0x99fbab88' + hexN_(id)); }));
+  return ids.map(function (id, i) { var p = words_(ps[i]); return { id: id, fee: Number(big_(p[4])), active: big_(p[7]) > BigInt(0) }; });
+}
+
+// ---------- keccak256 (Apps Script no lo incluye) ----------
+// Keccak-256 puro (Ethereum). Entrada y salida en hexadecimal sin 0x.
+var KECCAK_RC_ = [
+  BigInt('0x0000000000000001'), BigInt('0x0000000000008082'), BigInt('0x800000000000808a'), BigInt('0x8000000080008000'),
+  BigInt('0x000000000000808b'), BigInt('0x0000000080000001'), BigInt('0x8000000080008081'), BigInt('0x8000000000008009'),
+  BigInt('0x000000000000008a'), BigInt('0x0000000000000088'), BigInt('0x0000000080008009'), BigInt('0x000000008000000a'),
+  BigInt('0x000000008000808b'), BigInt('0x800000000000008b'), BigInt('0x8000000000008089'), BigInt('0x8000000000008003'),
+  BigInt('0x8000000000008002'), BigInt('0x8000000000000080'), BigInt('0x000000000000800a'), BigInt('0x800000008000000a'),
+  BigInt('0x8000000080008081'), BigInt('0x8000000000008080'), BigInt('0x0000000080000001'), BigInt('0x8000000080008008')
+];
+var KECCAK_ROT_ = [[0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61], [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]];
+var KECCAK_M64_ = (BigInt(1) << BigInt(64)) - BigInt(1);
+
+function keccakF_(s) {
+  var r, x, y, i;
+  for (r = 0; r < 24; r++) {
+    var C = [], D = [], B = new Array(25);
+    for (x = 0; x < 5; x++) C[x] = s[x] ^ s[x + 5] ^ s[x + 10] ^ s[x + 15] ^ s[x + 20];
+    for (x = 0; x < 5; x++) D[x] = C[(x + 4) % 5] ^ rol64_(C[(x + 1) % 5], 1);
+    for (i = 0; i < 25; i++) s[i] = s[i] ^ D[i % 5];
+    for (x = 0; x < 5; x++) for (y = 0; y < 5; y++) B[y + 5 * ((2 * x + 3 * y) % 5)] = rol64_(s[x + 5 * y], KECCAK_ROT_[x][y]);
+    for (x = 0; x < 5; x++) for (y = 0; y < 5; y++) s[x + 5 * y] = B[x + 5 * y] ^ ((~B[((x + 1) % 5) + 5 * y] & KECCAK_M64_) & B[((x + 2) % 5) + 5 * y]);
+    s[0] = s[0] ^ KECCAK_RC_[r];
+  }
+}
+function rol64_(v, n) {
+  if (n === 0) return v;
+  var bn = BigInt(n);
+  return ((v << bn) | (v >> (BigInt(64) - bn))) & KECCAK_M64_;
+}
+function keccak256Hex_(hex) {
+  var bytes = [];
+  for (var i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+  var rate = 136;
+  bytes.push(1);
+  while (bytes.length % rate !== 0) bytes.push(0);
+  bytes[bytes.length - 1] |= 0x80;
+  var s = new Array(25);
+  for (var k = 0; k < 25; k++) s[k] = BigInt(0);
+  for (var off = 0; off < bytes.length; off += rate) {
+    for (var l = 0; l < rate / 8; l++) {
+      var lane = BigInt(0);
+      for (var b = 7; b >= 0; b--) lane = (lane << BigInt(8)) | BigInt(bytes[off + l * 8 + b]);
+      s[l] = s[l] ^ lane;
+    }
+    keccakF_(s);
+  }
+  var out = '';
+  for (var o = 0; o < 4; o++) {
+    var v = s[o];
+    for (var q = 0; q < 8; q++) { out += ('0' + Number(v & BigInt(0xff)).toString(16)).slice(-2); v = v >> BigInt(8); }
+  }
+  return out;
+}
+
+
+// ---------- ajustes y registros (se guardan en este navegador) ----------
+var LS_PREFIX = 'uv3:', LS_ENTRIES = 'uv3entries';
+function lsGet_(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet_(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+function getSettings() {
+  var out = {};
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf(LS_PREFIX) === 0) { try { out[k.slice(LS_PREFIX.length)] = JSON.parse(localStorage.getItem(k)); } catch (e) {} } } } catch (e) {}
+  return out;
+}
+function saveSetting(key, value) { lsSet_(LS_PREFIX + key, value === null || value === undefined ? null : JSON.stringify(value)); return true; }
+var ENTRY_HEADERS = ['Posición', 'Tipo de pool', 'Par', 'Fecha de apertura', 'ID NFT (v3/v4)', 'Nivel de comisión',
+  'Cantidad token0', 'Token0', 'Precio entrada token0 (USD)', 'Cantidad token1', 'Token1', 'Precio entrada token1 (USD)',
+  'Monto total entrada (USD)', 'Actualizado'];
+function entries_() { try { return JSON.parse(lsGet_(LS_ENTRIES) || '{}') || {}; } catch (e) { return {}; } }
+/** Guarda o actualiza UN registro por posición con los datos de entrada. */
+function saveEntry(e) {
+  var all = entries_();
+  all[String(e.id)] = [String(e.id), e.kind, e.pair, e.open || '', e.nft || '', e.fee,
+    e.amt0, e.sym0, e.usd0, e.amt1, e.sym1, e.usd1, e.total, new Date().toISOString()];
+  lsSet_(LS_ENTRIES, JSON.stringify(all));
+  return { count: Object.keys(all).length };
+}
+function clearEntries() { lsSet_(LS_ENTRIES, null); return true; }
+/** CSV para Excel en español: separador ';', coma decimal y BOM UTF-8. */
+function entriesCsv() {
+  var cell = function (v) {
+    if (typeof v === 'number') v = String(v).replace('.', ',');
+    else if (typeof v === 'string' && /^\d+\.\d+%$/.test(v)) v = v.replace('.', ',');
+    v = v == null ? '' : String(v);
+    return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  var rows = [ENTRY_HEADERS].concat(Object.keys(entries_()).map(function (k) { return entries_()[k]; }));
+  return '\ufeff' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
+}
+return { readAny: readAny, positionsOf: positionsOf, getSettings: getSettings, saveSetting: saveSetting,
+  saveEntry: saveEntry, clearEntries: clearEntries, entriesCsv: entriesCsv, entryCount: function () { return Object.keys(entries_()).length; } };
+})();
+</script>
+<script>
+(function () {
+'use strict';
+const DEFAULTS = { '1385639': { open: '2026-10-17T10:53', entry: 0.02973, entryUsd: 2418.14, capital: 2918.61, collected: 0, invert: true } };
+
+const $ = (id) => document.getElementById(id);
+let S = {};
+const store = {
+  get(k, d) { return Object.prototype.hasOwnProperty.call(S, k) ? S[k] : d; },
+  set(k, v) { S[k] = v; BACKEND.saveSetting(k, v); },
+};
+const server = (fn, ...args) => Promise.resolve().then(() => BACKEND[fn](...args));
+const readAny = (type, id, wallet) => server('readAny', type, id, wallet);
+const positionsOf = (w) => server('positionsOf', w);
+
+// ---------- math ----------
+// raw amounts for pool price (raw token1/token0) pr
+function amountsRaw(pos, pr) {
+  const L = Number(pos.liquidity);
+  const sa = Math.pow(1.0001, pos.tl / 2), sb = Math.pow(1.0001, pos.tu / 2);
+  const s = Math.min(Math.max(Math.sqrt(pr), sa), sb);
+  return { a0: L * (1 / s - 1 / sb), a1: L * (s - sa) };
+}
+function model(pos, cfg) {
+  const d0 = pos.t0.decimals, d1 = pos.t1.decimals;
+  const k = Math.pow(10, d0 - d1);
+  const inv = !!cfg.invert; // base = token1 when inverted
+  const base = inv ? pos.t1 : pos.t0, quote = inv ? pos.t0 : pos.t1;
+  const toP = (pr) => (inv ? 1 / (pr * k) : pr * k);
+  const toRaw = (P) => (inv ? 1 / P / k : P / k);
+  const xy = (P) => { const a = amountsRaw(pos, toRaw(P)); const a0 = a.a0 / Math.pow(10, d0), a1 = a.a1 / Math.pow(10, d1); return inv ? { x: a1, y: a0 } : { x: a0, y: a1 }; };
+  const sp = Number(pos.sqrtPriceX96) / 2 ** 96;
+  const P1 = toP(sp * sp);
+  const lo = Math.pow(1.0001, pos.tl), hi = Math.pow(1.0001, pos.tu);
+  const Pa = Math.min(toP(lo), toP(hi)), Pb = Math.max(toP(lo), toP(hi));
+  let quoteUsd = pos.usd[quote.address], baseUsd = pos.usd[base.address];
+  if (quoteUsd == null && baseUsd != null) quoteUsd = baseUsd / P1;
+  if (quoteUsd == null && cfg.usd0) quoteUsd = inv ? cfg.usd0 : cfg.usd0 / P1;
+  const usdKnown = quoteUsd != null;
+  baseUsd = P1 * (quoteUsd || 0);
+  const P0 = cfg.entry > 0 ? cfg.entry : P1;
+  const entryBaseUsd = cfg.entryUsd > 0 ? cfg.entryUsd : baseUsd;
+  const entryQuoteUsd = entryBaseUsd / P0;
+  const s1 = xy(P1), s0 = xy(P0);
+  const capCalc = s0.x * entryBaseUsd + s0.y * entryQuoteUsd;
+  const capital = cfg.capital > 0 ? cfg.capital : capCalc;
+  const f0 = Number(pos.fees0raw) / Math.pow(10, d0), f1 = Number(pos.fees1raw) / Math.pow(10, d1);
+  const fx = inv ? f1 : f0, fy = inv ? f0 : f1;
+  const feesUsd = fx * baseUsd + fy * (quoteUsd || 0) + (cfg.collected || 0);
+  const opened = cfg.open ? new Date(cfg.open) : null;
+  const days = opened && !isNaN(opened) ? Math.max((pos.ts * 1000 - opened.getTime()) / 864e5, 1 / 24) : null;
+  const eff = 2 * Math.sqrt(P0) / (2 * Math.sqrt(P0) - P0 / Math.sqrt(Pb) - Math.sqrt(Pa));
+  const V0q = capital / entryQuoteUsd;
+  const val = {
+    v3: (P) => { const s = xy(P); return (s.x * P + s.y) * quoteUsd; },
+    v2: (P) => V0q * Math.sqrt(P / P0) * quoteUsd,
+    hold: (P) => (s0.x * P + s0.y) * quoteUsd,
+  };
+  // Comisiones de las últimas 24 h (v3 y v4; null si no hay datos o si hubo cobros/cambios de liquidez).
+  let feesUsd24 = null, fx24 = null, fy24 = null;
+  if (pos.fees24_0raw != null && pos.fees24_1raw != null) {
+    const g0 = Number(pos.fees24_0raw) / Math.pow(10, d0), g1 = Number(pos.fees24_1raw) / Math.pow(10, d1);
+    if (g0 >= 0 && g1 >= 0) { fx24 = inv ? g1 : g0; fy24 = inv ? g0 : g1; feesUsd24 = fx24 * baseUsd + fy24 * (quoteUsd || 0); }
+  }
+  return { base, quote, inv, P1, Pa, Pb, P0, s0, s1, quoteUsd, baseUsd, usdKnown, capital, capCalc, fx, fy, fx24, fy24, feesUsd, feesUsd24, days, eff, val, entryBaseUsd };
+}
+
+// ---------- format ----------
+const nf = (d) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: d, maximumFractionDigits: d });
+const usd = (v) => (v == null || !isFinite(v) ? '—' : '$' + nf(Math.abs(v) >= 10000 ? 0 : 2).format(v));
+const sUsd = (v) => (v >= 0 ? '+' : '−') + usd(Math.abs(v));
+const pct = (v) => (isFinite(v) ? nf(2).format(v * 100) + '%' : '—');
+const pct3 = (v) => (isFinite(v) ? nf(3).format(v * 100) + '%' : '—');
+const sPct = (v) => (v >= 0 ? '+' : '−') + pct(Math.abs(v));
+const amt = (v) => nf(v === 0 ? 2 : v < 0.001 ? 8 : v < 1 ? 6 : 4).format(v);
+const pfmt = (v) => nf(v < 0.01 ? 6 : v < 1 ? 5 : v < 100 ? 4 : 2).format(v);
+const cls = (el, v) => { el.classList.remove('ok', 'bad'); if (v > 0) el.classList.add('ok'); else if (v < 0) el.classList.add('bad'); return el; };
+const txt = (id, t) => { const el = $(id); el.textContent = t; return el; };
+
+// ---------- state ----------
+let current = null; // {pos}
+function cfgFor(id) { return Object.assign({ open: '', entry: null, entryUsd: null, capital: null, collected: 0, invert: null, usd0: null }, DEFAULTS[id] || {}, store.get('cfg:' + id, {})); }
+function saveCfg(id, patch) { const c = Object.assign(store.get('cfg:' + id, {}), patch); store.set('cfg:' + id, c); }
+function savedList() { return store.get('list', []); }
+function addSaved(id, label) { const l = savedList().filter((x) => x.id !== id); l.unshift({ id, label }); store.set('list', l.slice(0, 20)); renderSaved(); }
+
+function renderSaved() {
+  const box = $('saved'); box.replaceChildren();
+  savedList().forEach((s) => {
+    const c = document.createElement('span'); c.className = 'chip' + (current && current.pos.id === s.id ? ' on' : '');
+    c.textContent = s.label || s.id;
+    const x = document.createElement('span'); x.className = 'x'; x.textContent = '×'; x.title = 'Quitar de la lista';
+    x.addEventListener('click', (e) => { e.stopPropagation(); store.set('list', savedList().filter((y) => y.id !== s.id)); renderSaved(); });
+    c.appendChild(x);
+    c.addEventListener('click', () => { setSel(s.id); load(s.id); });
+    box.appendChild(c);
+  });
+}
+
+function status(t, err) { const s = $('status'); s.textContent = t; s.classList.toggle('err', !!err); }
+
+function parseKey(key) { const i = String(key).indexOf(':'); return i < 0 ? ['v3', String(key)] : [key.slice(0, i), key.slice(i + 1)]; }
+function updLabel() {
+  const t = $('ptype').value;
+  $('lblId').firstChild.textContent = t === 'v2' ? 'Dirección del par (pair) ' : 'ID del NFT de la posición ';
+  $('tokenId').placeholder = t === 'v2' ? '0xbb2b8038a1640196fbe3e38816f3e67cba72d940' : '1385639';
+}
+function setSel(key) { const [t, i] = parseKey(key); $('ptype').value = t; updLabel(); $('tokenId').value = i; }
+function curKey() { return $('ptype').value + ':' + $('tokenId').value.trim(); }
+async function load(key) {
+  const [type, raw] = parseKey(key || '');
+  const id = String(raw).trim();
+  if (!id) { status('Escribe un ID o una dirección.', true); return; }
+  const wallet = $('wallet').value.trim();
+  const sid = type === 'v3' ? id : type + ':' + (type === 'v2' ? id.toLowerCase() : id);
+  const cached = store.get('pos:' + sid, null);
+  if (cached) { current = { pos: cached }; fillInputs(); render(); }
+  status('Leyendo ' + type.toUpperCase() + ' #' + id + ' en Ethereum…');
+  $('btnLoad').disabled = true;
+  try {
+    const pos = await readAny(type, id, type === 'v2' ? wallet : '');
+    store.set('pos:' + pos.id, pos);
+    store.set('last', type + ':' + id);
+    current = { pos };
+    addSaved(type + ':' + id, '(' + type.toUpperCase() + ') ' + pos.t0.symbol + '/' + pos.t1.symbol + ' ' + (pos.fee / 10000) + '%');
+    fillInputs(); render();
+    persistEntry();
+    status('Actualizado: ' + (pos.shareLabel ? pos.shareLabel + '. ' : '') + 'bloque ' + pos.block.toLocaleString('es-VE') + ', ' + new Date(pos.ts * 1000).toLocaleString('es-VE') + '.');
+  } catch (e) {
+    const net = /failed to fetch|networkerror|load failed|rpc http/i.test(String(e && e.message));
+    status('No se pudo leer la posición: ' + (net ? 'no hay conexión con los nodos de Ethereum. Si estás en la vista previa del chat, ábrela en tu navegador (la vista previa bloquea internet).' : e.message) + (cached ? ' Se muestran los últimos datos guardados.' : ''), true);
+  } finally { $('btnLoad').disabled = false; }
+}
+
+function fillInputs() {
+  const pos = current.pos, c = cfgFor(pos.id);
+  if (c.invert == null) {
+    const st = pos.stable || {};
+    if (st[pos.t0.address]) c.invert = true; else if (st[pos.t1.address]) c.invert = false;
+    else { const u0 = pos.usd[pos.t0.address], u1 = pos.usd[pos.t1.address]; c.invert = u0 != null && u1 != null ? u1 < u0 : false; }
+    saveCfg(pos.id, { invert: c.invert });
+  }
+  const set = (el, v) => { if (document.activeElement !== el) el.value = v == null ? '' : v; };
+  set($('in_open'), c.open); set($('in_entry'), c.entry); set($('in_entryusd'), c.entryUsd);
+  set($('in_capital'), c.capital); set($('in_collected'), c.collected || ''); set($('in_usd0'), c.usd0);
+  const base = c.invert ? pos.t1 : pos.t0, quote = c.invert ? pos.t0 : pos.t1;
+  $('lb_entry').textContent = 'Precio de entrada (' + base.symbol + ' en ' + quote.symbol + ')';
+  $('lb_entryusd').textContent = 'Precio USD de ' + base.symbol + ' en la entrada';
+  const needUsd = pos.usd[pos.t0.address] == null && pos.usd[pos.t1.address] == null;
+  $('wrap_usd0').classList.toggle('hidden', !needUsd);
+  $('lb_usd0').textContent = 'Precio USD actual de ' + quote.symbol;
+}
+
+function render() {
+  if (!current) return;
+  const pos = current.pos, c = cfgFor(pos.id);
+  if (c.invert == null) c.invert = false;
+  $('main').classList.remove('hidden');
+  renderSaved();
+  const m = model(pos, c);
+  const B = m.base.symbol, Q = m.quote.symbol;
+  $('capNote').textContent = 'Capital calculado con la liquidez on-chain al precio de entrada: ' + usd(m.capCalc) + (c.capital > 0 ? ' (estás usando ' + usd(c.capital) + ')' : '') + '.';
+  if (!m.usdKnown) { $('take').textContent = 'Indica el precio USD de ' + Q + ' para calcular los valores.'; }
+  const v3tok = m.val.v3(m.P1), holdTok = m.val.hold(m.P1), v2tok = m.val.v2(m.P1);
+  const fees3 = m.feesUsd, fees2 = fees3 / m.eff;
+  const days = m.days;
+  const rows = [
+    { name: 'Uniswap ' + (pos.kind || 'v3') + ' (tu posición)', tok: v3tok, fee: fees3 },
+    { name: 'Uniswap v2 (estimado)', tok: v2tok, fee: fees2 },
+    { name: 'HODL (no aportar)', tok: holdTok, fee: 0 },
+  ].map((d) => Object.assign(d, { tot: d.tok + d.fee, res: d.tok + d.fee - m.capital, apr: days && m.capital > 0 ? d.fee / m.capital * 365 / days : NaN }));
+  const holdTot = rows[2].tot; rows.forEach((d) => (d.vsHold = d.tot - holdTot));
+  const v3 = rows[0];
+  const inRange = pos.tick >= pos.tl && pos.tick < pos.tu;
+
+  cls(txt('t_apr', pct(v3.apr)), v3.apr);
+  const perDay = days ? fees3 / days : NaN, perDayPct = m.capital > 0 ? perDay / m.capital : NaN;
+  const dEl = $('t_daily'); dEl.replaceChildren();
+  const dA = document.createElement('span'); dA.className = 'nowrap'; dA.textContent = isFinite(perDay) ? usd(perDay) + ' /día' : '—';
+  const dB = document.createElement('span'); dB.className = 'nowrap small'; dB.textContent = isFinite(perDayPct) ? pct3(perDayPct) + ' diario' : '';
+  dEl.append(dA, dB); cls(dEl, perDay);
+  txt('t_daily_n', m.feesUsd24 != null ? 'Últimas 24 h: ' + usd(m.feesUsd24) + ' (' + pct3(m.feesUsd24 / m.capital) + ')' : 'Últimas 24 h: sin datos' + (pos.kind === 'v2' ? ' (no disponible en v2)' : ' (hubo cobro o cambio de liquidez, o falta el histórico)'));
+  txt('t_apr_n', days ? 'En ' + nf(1).format(days) + ' días; v2 estimado: ' + pct(rows[1].apr) : 'Indica la fecha de apertura');
+  txt('t_fees', usd(fees3));
+  txt('t_fees_n', amt(m.fx) + ' ' + B + ' (' + usd(m.fx * m.baseUsd) + ') + ' + amt(m.fy) + ' ' + Q + ' (' + usd(m.fy * m.quoteUsd) + ')' + (c.collected ? ' + ' + usd(c.collected) + ' cobradas' : ' sin reclamar'));
+  txt('t_total', usd(v3.tot));
+  txt('t_total_lbl', 'Posición ' + (pos.kind || 'v3'));
+  const kindTxt = pos.kind || 'v3';
+  txt('t_vshold_lbl', kindTxt);
+  txt('cmpTitle', kindTxt === 'v2' ? 'Comparación: tu posición v2 vs v2 estimado vs HODL' : 'Comparación: ' + kindTxt + ' vs v2 vs HODL');
+  const howSrc = { v3: 'del contrato de Uniswap v3 (positions y una simulación de collect)',
+    v4: 'de los contratos de Uniswap v4 (PositionManager y StateView: liquidez y crecimiento de comisiones dentro del rango)',
+    v2: 'del par de Uniswap v2 (reservas y tu parte de tokens LP; las comisiones de v2 se reinvierten en el par y no se ven por separado)' }[kindTxt] || '';
+  const hn = $('howNote'); hn.textContent = hn.textContent.replace(/se leen (del contrato de Uniswap v3 \(positions y una simulación de collect\)|de los contratos de Uniswap v4 \([^)]*\)|del par de Uniswap v2 \([^)]*\))/, 'se leen ' + howSrc);
+  cls(txt('t_total_n', sUsd(v3.res) + ' (' + sPct(v3.res / m.capital) + ') sobre ' + usd(m.capital)), v3.res);
+  const vh = $('t_vshold'); vh.replaceChildren();
+  const vsPct = holdTot > 0 ? v3.vsHold / holdTot : 0;
+  const a = document.createElement('span'); a.className = 'nowrap'; a.textContent = sUsd(v3.vsHold);
+  const b = document.createElement('span'); b.className = 'nowrap small'; b.textContent = days ? sPct(vsPct * 365 / days) + ' APR' : sPct(vsPct);
+  vh.append(a, b); cls(vh, v3.vsHold);
+  const il = holdTok > 0 ? (v3tok - holdTok) / holdTok : 0;
+  txt('t_vshold_n', (v3.vsHold >= 0 ? 'Ganancia' : 'Pérdida') + ' vs HODL con comisiones: ' + sPct(vsPct) + ' · Pérdida impermanente sin comisiones: ' + sPct(il));
+  txt('t_hold', usd(holdTot));
+  cls(txt('t_hold_n', amt(m.s0.x) + ' ' + B + ' + ' + amt(m.s0.y) + ' ' + Q + ' · ' + sUsd(holdTot - m.capital) + ' (' + sPct((holdTot - m.capital) / m.capital) + ') sobre el capital'), holdTot - m.capital);
+  const fullR = pos.tl <= -887000 && pos.tu >= 887000;
+  const rEl = txt('t_range', Number(pos.liquidity) === 0 ? 'Cerrada' : fullR ? 'Rango completo' : inRange ? 'En rango' : 'Fuera de rango');
+  rEl.classList.remove('ok', 'bad'); rEl.classList.add(inRange && Number(pos.liquidity) > 0 ? 'ok' : 'bad');
+  txt('t_range_n', inRange ? 'A ' + pct((m.P1 - m.Pa) / m.P1) + ' del mínimo y ' + pct((m.Pb - m.P1) / m.P1) + ' del máximo' : (m.P1 <= m.Pa ? 'Todo en ' + B + ', no cobra comisiones' : 'Todo en ' + Q + ', no cobra comisiones'));
+  txt('t_range_p', 'Precio actual:\n1 ' + B + ' = ' + pfmt(m.P1) + ' ' + Q + '\n1 ' + Q + ' = ' + pfmt(1 / m.P1) + ' ' + B);
+
+  const inv = !!c.invert, eQ = m.entryBaseUsd / m.P0;
+  current.entry = {
+    id: pos.id, kind: (pos.kind || 'v3').toUpperCase(), pair: pos.t0.symbol + '/' + pos.t1.symbol,
+    open: c.open || '', nft: pos.kind === 'v2' ? '' : pos.id.replace(/^v4:/, ''), fee: (pos.fee / 10000) + '%',
+    amt0: inv ? m.s0.y : m.s0.x, sym0: pos.t0.symbol, usd0: inv ? eQ : m.entryBaseUsd,
+    amt1: inv ? m.s0.x : m.s0.y, sym1: pos.t1.symbol, usd1: inv ? m.entryBaseUsd : eQ,
+    total: m.capital
+  };
+  const best = rows.reduce((x, d) => (d.tot > x.tot ? d : x), rows[0]);
+  if (m.usdKnown) $('take').textContent = (days ? 'Las comisiones rinden ' + pct(v3.apr) + ' APR. ' : '') + 'Con ' + B + ' a ' + pfmt(m.P1) + ' ' + Q + ' la posición está ' + (inRange ? 'en rango' : 'fuera de rango') + ' y hoy la mejor opción es ' + best.name.replace(/ \(.*\)/, '') + ' (' + usd(best.tot) + ').';
+
+  const tb = $('cmp'); tb.replaceChildren(...rows.map((d, i) => {
+    const tr = document.createElement('tr');
+    [d.name, usd(d.tok), usd(d.fee), usd(d.tot), sUsd(d.res), i === 2 ? '—' : sUsd(d.vsHold), i === 2 ? '—' : pct(d.apr)].forEach((t, j) => {
+      const td = document.createElement('td'); td.textContent = t;
+      if (j === 4) cls(td, d.res); if (j === 5 && i !== 2) cls(td, d.vsHold);
+      tr.appendChild(td);
+    });
+    return tr;
+  }));
+  txt('eff', 'Eficiencia de capital del rango frente a v2: ' + nf(1).format(m.eff) + '×. Comisiones v2 = comisiones ' + (pos.kind || 'v3') + ' ÷ ' + nf(1).format(m.eff) + '.');
+
+  const effOk = m.P0 > m.Pa && m.P0 < m.Pb;
+  txt('t_eff', effOk ? '×' + nf(1).format(m.eff) : '—');
+  txt('t_eff_n', fullR ? 'Pool v2 (rango completo): referencia de 1×' : !effOk ? 'El precio de entrada está fuera del rango: indica el precio de entrada' : 'Tu rango concentra ' + nf(1).format(m.eff) + ' veces más liquidez que v2 con el mismo capital');
+  const facts = [
+    ['Par', pos.t0.symbol + '/' + pos.t1.symbol + ' · ' + nf(2).format(pos.fee / 10000) + '%'],
+    ['Precio actual', pfmt(m.P1) + ' ' + Q + ' por ' + B],
+    ['Rango mínimo', pfmt(m.Pa)], ['Rango máximo', pfmt(m.Pb)],
+    ['Precio de entrada', pfmt(m.P0)],
+    ['Contenido actual', amt(m.s1.x) + ' ' + B + ' + ' + amt(m.s1.y) + ' ' + Q],
+    ['Contenido inicial (estimado)', amt(m.s0.x) + ' ' + B + ' + ' + amt(m.s0.y) + ' ' + Q],
+    ['Precio USD ' + B, usd(m.baseUsd)], ['Precio USD ' + Q, usd(m.quoteUsd)],
+    ['Días abierta', days ? nf(2).format(days) : '—'],
+    ['Liquidez', Number(pos.liquidity).toLocaleString('es-VE')],
+    ['Dueño', pos.owner.slice(0, 6) + '…' + pos.owner.slice(-4)],
+  ];
+  $('facts').replaceChildren(...facts.map(([k, v]) => { const d = document.createElement('div'); const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; d.append(dt, dd); return d; }));
+  txt('readAt', 'Leído on-chain en el bloque ' + pos.block.toLocaleString('es-VE') + ' (' + new Date(pos.ts * 1000).toLocaleString('es-VE') + '). Pool ' + pos.pool.slice(0, 6) + '…' + pos.pool.slice(-4) + '.');
+  drawDonut(m, B, Q, c.collected);
+  renderTokenYield(m, B, Q, days, c.collected);
+  m.collected = c.collected || 0;
+  if (m.usdKnown) drawChart(m, B, Q);
+}
+
+// ---------- chart ----------
+// Rendimiento de cada token en sus propias unidades (un cuadro por token, mismo formato que los demás).
+function renderTokenYield(m, B, Q, days, collected) {
+  [['tokB', B, m.s0.x, m.fx, m.fx24], ['tokQ', Q, m.s0.y, m.fy, m.fy24]].forEach(([k, sym, dep, fee, f24]) => {
+    const perDay = days ? fee / days : NaN, dPct = dep > 0 ? perDay / dep : NaN;
+    txt('t_' + k + '_l', 'Rendimiento en ' + sym);
+    const el = $('t_' + k); el.replaceChildren();
+    const a = document.createElement('span'); a.textContent = isFinite(perDay) ? amt(perDay) + ' ' + sym + ' /día' : '—';
+    const b = document.createElement('span'); b.className = 'small';
+    b.textContent = isFinite(dPct) ? pct3(dPct) + ' diario · APR ' + pct(dPct * 365) : (days ? 'APR — (no depositaste ' + sym + ')' : '');
+    el.append(a, b); if (isFinite(perDay)) cls(el, perDay);
+    const parts = ['Últimas 24 h: ' + (f24 != null ? amt(f24) + ' ' + sym + (dep > 0 ? ' (' + pct3(f24 / dep) + ')' : '') : 'sin datos'),
+      'Acumulado: ' + amt(fee) + ' ' + sym, 'Depositado: ' + (dep > 0 ? amt(dep) + ' ' + sym : '—')];
+    if (!days) parts.push('Indica la fecha de apertura');
+    if (collected) parts.push('sin incluir lo ya cobrado');
+    txt('t_' + k + '_n', parts.join(' · '));
+  });
+}
+// Barra lineal apilada con resplandor: parts = [{ n, v (USD), c (color), a (cantidad) }]; el total va encima.
+function donut(barId, legId, parts, emptyMsg) {
+  const bar = $(barId), leg = $(legId), tot$ = $(barId + 'Tot');
+  bar.replaceChildren(); leg.replaceChildren();
+  const tot = parts.reduce((s, p) => s + (p.v > 0 ? p.v : 0), 0);
+  tot$.replaceChildren();
+  const tl = document.createElement('span'); tl.className = 'sub'; tl.textContent = 'Total';
+  tot$.append(tl, document.createTextNode(tot > 0 ? usd(tot) : '—'));
+  if (!(tot > 0)) { const e = document.createElement('div'); e.className = 'seg empty'; e.textContent = emptyMsg || 'Sin datos'; bar.appendChild(e); return; }
+  parts.forEach((p) => {
+    const f = Math.max(p.v, 0) / tot;
+    if (f > 0) {
+      const seg = document.createElement('div'); seg.className = 'seg';
+      seg.style.flex = String(f); seg.style.background = p.c; seg.style.setProperty('--g', p.c);
+      if (f >= 0.12) { const sp = document.createElement('span'); sp.textContent = pct(f); seg.appendChild(sp); } seg.title = p.n + ' · ' + pct(f) + ' · ' + usd(p.v);
+      bar.appendChild(seg);
+    }
+    const row = document.createElement('div'); row.className = 'row';
+    const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = p.c; sw.style.setProperty('--g', p.c);
+    const t = document.createElement('span'); t.textContent = p.n + ' · ' + pct(f);
+    const sub = document.createElement('span'); sub.className = 'sub'; sub.textContent = amt(p.a) + ' ' + p.n + ' · ' + usd(p.v);
+    const wrap = document.createElement('div'); wrap.append(t, document.createElement('br'), sub);
+    row.append(sw, wrap); leg.appendChild(row);
+  });
+}
+// Barras: contenido actual de la pool y comisiones sin reclamar.
+const DONUT_SCARLET = '#FF2400', DONUT_ETHER = '#627EEA';
+function drawDonut(m, B, Q, collected) {
+  // ETH/WETH siempre en azul éter; si ninguno es ETH, base en rojo escarlata y cotizado en azul éter.
+  const isEth = (sym) => /^W?ETH$/i.test(sym);
+  const cB = isEth(B) ? DONUT_ETHER : DONUT_SCARLET;
+  const cQ = cB === DONUT_ETHER ? DONUT_SCARLET : DONUT_ETHER;
+  donut('donut', 'donutLegend', [
+    { n: B, v: m.s1.x * m.baseUsd, c: cB, a: m.s1.x },
+    { n: Q, v: m.s1.y * m.quoteUsd, c: cQ, a: m.s1.y }], 'Sin liquidez');
+  donut('donutFees', 'donutFeesLegend', [
+    { n: B, v: m.fx * m.baseUsd, c: cB, a: m.fx },
+    { n: Q, v: m.fy * m.quoteUsd, c: cQ, a: m.fy }], 'Sin comisiones');
+  txt('donutNote', 'Valores con precios de Chainlink. Las comisiones son las pendientes por reclamar' +
+    (collected ? '; no incluyen los ' + usd(collected) + ' ya cobrados que indicaste, porque no se sabe en qué token están.' : '.'));
+}
+function drawChart(m, B, Q) {
+  const box = $('chart'); box.replaceChildren();
+  const W = Math.max(box.clientWidth, 280), H = 320, mt = 10, mb = 28, mr = 10;
+  const full = m.Pa < m.P1 * 1e-6 && m.Pb > m.P1 * 1e6;
+  const lo = full ? m.P1 * 0.25 : Math.min(m.Pa * 0.8, m.P1 * 0.9), hi = full ? m.P1 * 4 : Math.max(m.Pb * 1.2, m.P1 * 1.1);
+  const N = 160, xs = Array.from({ length: N + 1 }, (_, i) => lo + (hi - lo) * i / N);
+  const css = getComputedStyle(document.documentElement);
+  const col = (n) => css.getPropertyValue(n).trim();
+  const withFees = $('chkFees').checked;
+  const kind = (current && current.pos.kind) || 'v3';
+  const feeAt = (P) => withFees ? (m.fx * P + m.fy) * m.quoteUsd + (m.collected || 0) : 0;
+  const series = [
+    { name: kind + (withFees ? ' + comisiones (+' + usd(feeAt(m.P1)) + ')' : ' (tu posición)'), color: col('--c1'), f: (P) => m.val.v3(P) + feeAt(P) },
+    { name: 'v2 (rango completo)', color: col('--c2'), f: m.val.v2 },
+    { name: 'HODL', color: col('--c3'), f: m.val.hold },
+  ];
+  if (withFees) series.unshift({ name: kind + ' sin comisiones', color: col('--c1'), f: m.val.v3, dash: '5 4' });
+  series.forEach((s) => (s.pts = xs.map((P) => [P, s.f(P)])));
+  $('legend').replaceChildren(...series.map((s) => { const sp = document.createElement('span'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = s.color; sp.append(sw, s.name); return sp; }));
+  let ymin = Infinity, ymax = -Infinity; series.forEach((s) => s.pts.forEach((p) => { ymin = Math.min(ymin, p[1]); ymax = Math.max(ymax, p[1]); }));
+  const span = ymax - ymin || 1; ymin -= span * 0.05; ymax += span * 0.05;
+  const step = niceStep((ymax - ymin) / 5);
+  const ticks = []; for (let t = Math.ceil(ymin / step) * step; t <= ymax; t += step) ticks.push(t);
+  const NS = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(NS, 'svg'); svg.setAttribute('width', '100%'); svg.setAttribute('viewBox', `0 0 ${W} ${H}`); svg.style.display = 'block'; svg.style.overflow = 'visible';
+  box.appendChild(svg);
+  const el = (tag, attrs, parent) => { const e = document.createElementNS(NS, tag); for (const k in attrs) e.setAttribute(k, attrs[k]); (parent || svg).appendChild(e); return e; };
+  const text = (x, y, t, anchor, color) => { const e = el('text', { x, y, 'text-anchor': anchor || 'start', fill: color || col('--muted'), 'font-size': 11 }); e.textContent = t; return e; };
+  let ml = 0; ticks.forEach((t) => { const e = text(0, 0, usd(t)); ml = Math.max(ml, e.getComputedTextLength()); e.remove(); }); ml += 10;
+  const x = (P) => ml + (P - lo) / (hi - lo) * (W - mr - ml);
+  const y = (v) => mt + (1 - (v - ymin) / (ymax - ymin)) * (H - mt - mb);
+  if (!full) el('rect', { x: x(m.Pa), y: mt, width: x(m.Pb) - x(m.Pa), height: H - mt - mb, fill: col('--band') });
+  ticks.forEach((t) => { el('line', { x1: ml, x2: W - mr, y1: y(t), y2: y(t), stroke: col('--grid') }); text(ml - 6, y(t) + 4, usd(t), 'end'); });
+  const nx = W < 450 ? 4 : 7; for (let i = 0; i <= nx; i++) { const P = lo + (hi - lo) * i / nx; text(x(P), H - 8, pfmt(P), 'middle'); }
+  el('line', { x1: ml, x2: W - mr, y1: H - mb, y2: H - mb, stroke: col('--line') });
+  if (!full) [m.Pa, m.Pb].forEach((v) => el('line', { x1: x(v), x2: x(v), y1: mt, y2: H - mb, stroke: col('--muted'), 'stroke-dasharray': '4 3' }));
+  if (!full) {
+    text(x(m.Pa) - 4, H - mb - 8, 'mín ' + pfmt(m.Pa), 'end');
+    text(x(m.Pb) + 4, H - mb - 8, 'máx ' + pfmt(m.Pb), 'start');
+    text((x(m.Pa) + x(m.Pb)) / 2, mt + 12, 'Rango activo (cobra comisiones)', 'middle');
+  }
+  el('line', { x1: x(m.P0), x2: x(m.P0), y1: 30, y2: H - mb, stroke: col('--muted'), 'stroke-dasharray': '2 3' });
+  el('line', { x1: x(m.P1), x2: x(m.P1), y1: 30, y2: H - mb, stroke: col('--fg') });
+  const left = m.P1 < m.P0;
+  text(x(m.P1) + (left ? -4 : 4), 40, 'hoy ' + pfmt(m.P1), left ? 'end' : 'start', col('--fg'));
+  text(x(m.P0) + (left ? 4 : -4), 54, 'entrada ' + pfmt(m.P0), left ? 'start' : 'end');
+  series.forEach((s) => el('path', { d: 'M' + s.pts.map((p) => x(p[0]).toFixed(1) + ',' + y(p[1]).toFixed(1)).join('L'), fill: 'none', stroke: s.color, 'stroke-width': 2, ...(s.dash ? { 'stroke-dasharray': s.dash } : {}), 'stroke-linecap': 'round', 'stroke-linejoin': 'round' }));
+  const rule = el('line', { y1: mt, y2: H - mb, stroke: col('--muted'), visibility: 'hidden' });
+  const dots = series.map((s) => el('circle', { r: 4, fill: s.color, visibility: 'hidden' }));
+  const tip = document.createElement('div'); tip.className = 'tip hidden'; box.appendChild(tip);
+  const hit = el('rect', { x: ml, y: 0, width: W - mr - ml, height: H - mb, fill: 'transparent' });
+  hit.addEventListener('pointermove', (ev) => {
+    const r = svg.getBoundingClientRect(); const mx = (ev.clientX - r.left) * W / r.width;
+    const P = lo + (mx - ml) / (W - mr - ml) * (hi - lo);
+    rule.setAttribute('x1', mx); rule.setAttribute('x2', mx); rule.setAttribute('visibility', 'visible');
+    tip.replaceChildren(); const h = document.createElement('div'); h.style.color = col('--muted'); h.textContent = B + ' = ' + pfmt(P) + ' ' + Q; tip.appendChild(h);
+    series.forEach((s, i) => { const v = s.f(P); dots[i].setAttribute('cx', mx); dots[i].setAttribute('cy', y(v)); dots[i].setAttribute('visibility', 'visible'); const row = document.createElement('div'); const sw = document.createElement('span'); sw.className = 'sw'; sw.style.background = s.color; row.append(sw, s.name + ': ' + usd(v)); tip.appendChild(row); });
+    tip.classList.remove('hidden');
+    const px = mx * r.width / W; tip.style.left = Math.min(Math.max(px + 12, 0), box.clientWidth - tip.offsetWidth) + 'px';
+  });
+  hit.addEventListener('pointerleave', () => { tip.classList.add('hidden'); rule.setAttribute('visibility', 'hidden'); dots.forEach((d) => d.setAttribute('visibility', 'hidden')); });
+}
+function niceStep(s) { const e = Math.pow(10, Math.floor(Math.log10(s))); const f = s / e; return (f < 1.5 ? 1 : f < 3 ? 2 : f < 7 ? 5 : 10) * e; }
+
+// ---------- events ----------
+$('btnLoad').addEventListener('click', () => load(curKey()));
+$('tokenId').addEventListener('keydown', (e) => { if (e.key === 'Enter') load(curKey()); });
+$('ptype').addEventListener('change', () => { updLabel(); });
+$('btnWallet').addEventListener('click', async () => {
+  const w = $('wallet').value.trim();
+  if (!/^0x[0-9a-fA-F]{40}$/.test(w)) { status('Dirección de wallet no válida.', true); return; }
+  store.set('wallet', w);
+  status('Buscando posiciones de la wallet…');
+  try {
+    const list = await positionsOf(w);
+    const box = $('found'); box.replaceChildren();
+    list.forEach((p) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = '#' + p.id + ' · ' + nf(2).format(p.fee / 10000) + '% · ' + (p.active ? 'activa' : 'vacía'); c.addEventListener('click', () => { setSel('v3:' + p.id); load('v3:' + p.id); }); box.appendChild(c); });
+    status(list.length ? 'Encontradas ' + list.length + ' posiciones. Pulsa una para cargarla.' : 'Esta wallet no tiene posiciones Uniswap v3.');
+  } catch (e) { status('No se pudo buscar: ' + e.message, true); }
+});
+const bind = (id, key, num) => $(id).addEventListener('change', () => {
+  if (!current) return; const v = $(id).value;
+  saveCfg(current.pos.id, { [key]: v === '' ? null : num ? Number(v) : v }); render(); persistEntry();
+});
+bind('in_open', 'open'); bind('in_entry', 'entry', true); bind('in_entryusd', 'entryUsd', true);
+bind('in_capital', 'capital', true); bind('in_collected', 'collected', true); bind('in_usd0', 'usd0', true);
+$('btnInvert').addEventListener('click', () => {
+  if (!current) return; const c = cfgFor(current.pos.id);
+  const patch = { invert: !c.invert };
+  if (c.entry > 0) { patch.entry = 1 / c.entry; if (c.entryUsd > 0) patch.entryUsd = c.entryUsd / c.entry; }
+  saveCfg(current.pos.id, patch); fillInputs(); render(); persistEntry();
+});
+let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(render, 150); });
+
+// ---------- registro de entrada ----------
+async function persistEntry() {
+  if (!current || !current.entry) return;
+  try { const r = await server('saveEntry', current.entry); $('histNote').textContent = 'Registro guardado (' + r.count + (r.count === 1 ? ' posición' : ' posiciones') + ' en este navegador).'; }
+  catch (e) { $('histNote').textContent = 'No se pudo guardar el registro: ' + e.message; }
+}
+$('btnClearHist').addEventListener('click', async () => {
+  if (!confirm('¿Borrar todos los registros de entrada guardados en este navegador?')) return;
+  await server('clearEntries'); $('histNote').textContent = 'Registros borrados.';
+});
+$('btnCsv').addEventListener('click', async () => {
+  const csv = await server('entriesCsv');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'registros-uniswap.csv'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+});
+
+$('chkFees').addEventListener('change', () => { if (current) render(); });
+
+// start
+(async () => {
+  try { S = await server('getSettings'); } catch (e) { S = {}; }
+  $('wallet').value = store.get('wallet', '');
+  renderSaved();
+  const last = store.get('last', null) || 'v3:1385639';
+  setSel(last);
+  load(last);
+})();
+})();
+</script>
+</body>
+</html>
