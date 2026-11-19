@@ -387,6 +387,33 @@ async function positionsOf(wallet) {
   return ids.map(function (id, i) { var p = words_(ps[i]); return { id: id, fee: Number(big_(p[4])), active: big_(p[7]) > BigInt(0) }; });
 }
 
+/** Lista las posiciones v4 de una wallet. El contrato de v4 no permite enumerar los NFT de una wallet,
+ *  así que se consulta el historial de transferencias en Blockscout (gratis, sin clave) y luego se
+ *  confirma en la blockchain que cada NFT sigue siendo de la wallet. */
+async function positionsOfV4(wallet) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('Dirección no válida');
+  var w = wallet.toLowerCase();
+  var url = 'https://eth.blockscout.com/api?module=account&action=tokennfttx&address=' + w + '&contractaddress=' + NPM_V4 + '&page=1&offset=1000&sort=asc';
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error('Blockscout HTTP ' + resp.status);
+  var j = await resp.json();
+  var rows = Array.isArray(j.result) ? j.result : [];
+  var ids = []; rows.forEach(function (x) { if (ids.indexOf(String(x.tokenID)) < 0) ids.push(String(x.tokenID)); });
+  if (!ids.length) return [];
+  ids = ids.slice(-50);
+  var calls = [];
+  ids.forEach(function (id) { calls.push(ec_(NPM_V4, '0x6352211e' + hexN_(id)), ec_(NPM_V4, '0x1efeed33' + hexN_(id)), ec_(NPM_V4, '0x7ba03aad' + hexN_(id))); });
+  var r = await rpcBatch_(calls);
+  var out = [], meta = {};
+  for (var i = 0; i < ids.length; i++) {
+    if (addr_(words_(r[i * 3])[0]) !== w) continue; // ya no es de la wallet
+    var k = words_(r[i * 3 + 2]), c0 = addr_(k[0]), c1 = addr_(k[1]);
+    for (var a of [c0, c1]) if (!meta[a]) meta[a] = await tokenMeta_(a);
+    out.push({ id: ids[i], fee: Number(big_(k[2])), active: big_(words_(r[i * 3 + 1])[0]) > BigInt(0), pair: meta[c0].symbol + '/' + meta[c1].symbol });
+  }
+  return out.reverse();
+}
+
 // ---------- keccak256 (Apps Script no lo incluye) ----------
 // Keccak-256 puro (Ethereum). Entrada y salida en hexadecimal sin 0x.
 var KECCAK_RC_ = [
@@ -477,7 +504,7 @@ function entriesCsv() {
   var rows = [ENTRY_HEADERS].concat(Object.keys(entries_()).map(function (k) { return entries_()[k]; }));
   return '\ufeff' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
 }
-return { readAny: readAny, positionsOf: positionsOf, getSettings: getSettings, saveSetting: saveSetting,
+return { readAny: readAny, positionsOf: positionsOf, positionsOfV4: positionsOfV4, getSettings: getSettings, saveSetting: saveSetting,
   saveEntry: saveEntry, clearEntries: clearEntries, entriesCsv: entriesCsv, entryCount: function () { return Object.keys(entries_()).length; } };
 })();
 </script>
@@ -495,6 +522,7 @@ const store = {
 const server = (fn, ...args) => Promise.resolve().then(() => BACKEND[fn](...args));
 const readAny = (type, id, wallet) => server('readAny', type, id, wallet);
 const positionsOf = (w) => server('positionsOf', w);
+const positionsOfV4 = (w) => server('positionsOfV4', w);
 
 // ---------- math ----------
 // raw amounts for pool price (raw token1/token0) pr
@@ -867,13 +895,24 @@ $('btnWallet').addEventListener('click', async () => {
   const w = $('wallet').value.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(w)) { status('Dirección de wallet no válida.', true); return; }
   store.set('wallet', w);
-  status('Buscando posiciones de la wallet…');
-  try {
-    const list = await positionsOf(w);
-    const box = $('found'); box.replaceChildren();
-    list.forEach((p) => { const c = document.createElement('span'); c.className = 'chip'; c.textContent = '#' + p.id + ' · ' + nf(2).format(p.fee / 10000) + '% · ' + (p.active ? 'activa' : 'vacía'); c.addEventListener('click', () => { setSel('v3:' + p.id); load('v3:' + p.id); }); box.appendChild(c); });
-    status(list.length ? 'Encontradas ' + list.length + ' posiciones. Pulsa una para cargarla.' : 'Esta wallet no tiene posiciones Uniswap v3.');
-  } catch (e) { status('No se pudo buscar: ' + e.message, true); }
+  status('Buscando posiciones v3 y v4 de la wallet…');
+  const box = $('found'); box.replaceChildren();
+  const [r3, r4] = await Promise.allSettled([positionsOf(w), positionsOfV4(w)]);
+  const list = [];
+  if (r3.status === 'fulfilled') r3.value.forEach((p) => list.push(Object.assign({ v: 'v3' }, p)));
+  if (r4.status === 'fulfilled') r4.value.forEach((p) => list.push(Object.assign({ v: 'v4' }, p)));
+  list.sort((a, b) => (b.active - a.active));
+  list.forEach((p) => {
+    const c = document.createElement('span'); c.className = 'chip';
+    c.textContent = '(' + p.v.toUpperCase() + ') #' + p.id + (p.pair ? ' · ' + p.pair : '') + ' · ' + nf(2).format(p.fee / 10000) + '% · ' + (p.active ? 'activa' : 'vacía');
+    c.addEventListener('click', () => { setSel(p.v + ':' + p.id); load(p.v + ':' + p.id); });
+    box.appendChild(c);
+  });
+  const errs = [];
+  if (r3.status === 'rejected') errs.push('v3: ' + r3.reason.message);
+  if (r4.status === 'rejected') errs.push('v4: ' + r4.reason.message + ' (la búsqueda v4 usa Blockscout; puedes cargar la posición escribiendo su ID)');
+  const n3 = list.filter((p) => p.v === 'v3').length, n4 = list.filter((p) => p.v === 'v4').length;
+  status((list.length ? 'Encontradas ' + n3 + ' posiciones v3 y ' + n4 + ' v4. Pulsa una para cargarla.' : 'Esta wallet no tiene posiciones Uniswap v3 ni v4.') + (errs.length ? ' No se pudo buscar en ' + errs.join(' · ') : ''), errs.length > 0 && !list.length);
 });
 const bind = (id, key, num) => $(id).addEventListener('change', () => {
   if (!current) return; const v = $(id).value;
