@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Monitor Uniswap v3</title>
+<title>Monitor Uniswap</title>
 <style>
 :root{--bg:#f7f6f3;--panel:#fff;--fg:#1f1e1b;--muted:#6b6862;--line:#e4e1da;--ok:#1a7f4b;--bad:#b42318;--warn:#a15c07;--c1:#2f6fdf;--c2:#d97a18;--c3:#7a5cc7;--band:rgba(47,111,223,.08);--grid:#ecebe6;--input:#fff}
 @media (prefers-color-scheme: dark){:root{--bg:#161614;--panel:#201f1d;--fg:#ecebe6;--muted:#a3a09a;--line:#34322e;--ok:#4cc38a;--bad:#f2766b;--warn:#e7a54a;--c1:#6b9bff;--c2:#f0a050;--c3:#a98bf0;--band:rgba(107,155,255,.1);--grid:#2b2a27;--input:#181816}}
@@ -56,7 +56,7 @@ dl.facts dt{color:var(--muted);font-size:.76rem}dl.facts dd{margin:0}
 <div class="wrap">
   <header>
     <h1 style="text-align:center;width:100%">Monitor de posiciones Uniswap (v2, v3 y v4)</h1>
-    <p class="note">Lee tu posición directamente de la blockchain de Ethereum (contratos de Uniswap v2, v3 o v4, según la pool, y oráculos Chainlink). Tus valores se guardan en tu cuenta de Google y cada lectura queda en un historial de Google Sheets.</p>
+    <p class="note">Lee tu posición directamente de la blockchain de Ethereum (contratos de Uniswap v2, v3 o v4, según la pool, y oráculos Chainlink). Tus valores y registros se guardan en este navegador (no se envían a ningún servidor).</p>
   </header>
 
   <section class="card">
@@ -153,8 +153,8 @@ dl.facts dt{color:var(--muted);font-size:.76rem}dl.facts dd{margin:0}
 
     <section class="card">
       <h2>Registro de entrada</h2>
-      <p class="note">Se guarda una sola fila por posición en la pestaña <b>Entradas</b> de tu hoja de Google Sheets, y se actualiza cada vez que cambias un dato de entrada.</p>
-      <div class="bar"><a id="sheetLink" target="_blank" rel="noopener" href="#">Abrir la hoja</a><button id="btnClearHist">Borrar historial anterior</button><span class="note" id="histNote"></span></div>
+      <p class="note">Se guarda un registro por posición en este navegador y se actualiza cada vez que cambias un dato de entrada. Descárgalo como CSV para abrirlo en Excel. Cada navegador o dispositivo guarda sus propios registros.</p>
+      <div class="bar"><button id="btnCsv">Descargar CSV</button><button id="btnClearHist">Borrar registros</button><span class="note" id="histNote"></span></div>
     </section>
 
     <section class="card">
@@ -165,6 +165,352 @@ dl.facts dt{color:var(--muted);font-size:.76rem}dl.facts dd{margin:0}
 </div>
 
 <script>
+// ===== Lectura on-chain y almacenamiento local (antes Codigo.gs en Google Apps Script) =====
+const BACKEND = (function () {
+'use strict';
+var RPCS = ['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org']; // publicnode no sirve estado histórico; drpc sí (se usa de respaldo)
+var NPM_V3 = '0xc36442b4a4522e871399cd717abdd847ab11fe88';
+var FACTORY_V3 = '0x1f98431c8ad98523631ae4a59f267346ea31f984';
+var NPM_V4 = '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e';
+var SV_V4 = '0x7ffe42c4a5deea5b0fec41c94c136cf115597227';
+var FACTORY_V2 = '0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f';
+var FEEDS = { ETH: '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', BTC: '0xf4030086522a5beea4988f8ca5b36dbc97bee88c' };
+var ZERO = '0x0000000000000000000000000000000000000000';
+var TOKENS = {
+  '0x0000000000000000000000000000000000000000': { feed: 'ETH', native: true },
+  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { feed: 'ETH' },
+  '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { feed: 'BTC' },
+  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { usd: 1, stable: true },
+  '0xdac17f958d2ee523a2206206994597c13d831ec7': { usd: 1, stable: true },
+  '0x6b175474e89094c44da98b954eedeac495271d0f': { usd: 1, stable: true }
+};
+var FULL_TICK = 887220;
+
+// ---------- RPC ----------
+async function rpcBatch_(calls) {
+  var last;
+  for (var u = 0; u < RPCS.length; u++) {
+    try {
+      var body = calls.map(function (c, i) { return { jsonrpc: '2.0', id: i, method: c.method, params: c.params }; });
+      var resp = await fetch(RPCS[u], { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+      if (!resp.ok) throw new Error('RPC HTTP ' + resp.status);
+      var j = await resp.json();
+      if (!Array.isArray(j)) throw new Error((j && j.error && j.error.message) || 'respuesta RPC no válida');
+      var byId = {}; j.forEach(function (x) { byId[x.id] = x; });
+      return calls.map(function (c, i) {
+        var x = byId[i];
+        if (!x) throw new Error('falta respuesta RPC');
+        if (x.error) throw new Error(x.error.message || 'error RPC');
+        return x.result;
+      });
+    } catch (e) { last = e; }
+  }
+  throw last;
+}
+function ec_(to, data, from, block) { var o = { to: to, data: data }; if (from) o.from = from; return { method: 'eth_call', params: [o, block || 'latest'] }; }
+function pad_(h) { h = String(h).replace(/^0x/, '').toLowerCase(); while (h.length < 64) h = '0' + h; return h; }
+function hexN_(n) { return pad_(BigInt(n).toString(16)); }
+function encI_(n) { return BigInt.asUintN(256, BigInt(n)).toString(16).padStart(64, '0'); }
+function words_(h) { return String(h).replace(/^0x/, '').match(/.{64}/g) || []; }
+function big_(w) { return BigInt('0x' + w); }
+function int24_(w) { return Number(BigInt.asIntN(24, big_(w))); }
+function addr_(w) { return '0x' + w.slice(24).toLowerCase(); }
+function decodeString_(h) {
+  try {
+    var hex = String(h).replace(/^0x/, ''), w = words_(h), bytes;
+    if (w.length >= 3) { var len = Number(big_(w[1])); bytes = hex.slice(128, 128 + len * 2); }
+    else bytes = w[0].replace(/(00)+$/, '');
+    var arr = bytes.match(/.{2}/g).map(function (b) { var v = parseInt(b, 16); return v > 127 ? v - 256 : v; });
+    return new TextDecoder().decode(Uint8Array.from(arr.map(function (v) { return v & 255; }))).replace(/\u0000/g, '');
+  } catch (e) { return '?'; }
+}
+async function tokenMeta_(address) {
+  if (address === ZERO) return { address: ZERO, decimals: 18, symbol: 'ETH' };
+  var r = await rpcBatch_([ec_(address, '0x313ce567'), ec_(address, '0x95d89b41')]);
+  return { address: address, decimals: Number(big_(words_(r[0])[0])), symbol: decodeString_(r[1]) };
+}
+async function feedPrices_() {
+  var r = await rpcBatch_([ec_(FEEDS.ETH, '0xfeaf968c'), ec_(FEEDS.BTC, '0xfeaf968c')]);
+  return { ETH: Number(big_(words_(r[0])[1])) / 1e8, BTC: Number(big_(words_(r[1])[1])) / 1e8 };
+}
+function usdMap_(tokens, feeds) {
+  var usd = {}, stable = {};
+  tokens.forEach(function (t) {
+    var m = TOKENS[t.address];
+    if (m && m.feed) usd[t.address] = feeds[m.feed];
+    else if (m && m.usd) usd[t.address] = m.usd;
+    stable[t.address] = !!(m && m.stable);
+  });
+  return { usd: usd, stable: stable };
+}
+
+// ---------- v3 ----------
+async function readPosition_v3_(id) {
+  var r = await rpcBatch_([ec_(NPM_V3, '0x99fbab88' + hexN_(id)), ec_(NPM_V3, '0x6352211e' + hexN_(id)), { method: 'eth_getBlockByNumber', params: ['latest', false] }]);
+  var w = words_(r[0]);
+  var owner = addr_(words_(r[1])[0]);
+  var pos = { id: id, owner: owner, token0: addr_(w[2]), token1: addr_(w[3]), fee: Number(big_(w[4])), tl: int24_(w[5]), tu: int24_(w[6]), liquidity: big_(w[7]).toString() };
+  if (/^0x0+$/.test(pos.token0)) throw new Error('La posición no existe.');
+  var max = pad_('ffffffffffffffffffffffffffffffff');
+  var r2 = await rpcBatch_([
+    ec_(NPM_V3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner),
+    ec_(FACTORY_V3, '0x1698ee82' + pad_(pos.token0) + pad_(pos.token1) + hexN_(pos.fee)),
+    ec_(pos.token0, '0x313ce567'), ec_(pos.token0, '0x95d89b41'),
+    ec_(pos.token1, '0x313ce567'), ec_(pos.token1, '0x95d89b41')
+  ]);
+  var cw = words_(r2[0]);
+  pos.fees0raw = big_(cw[0]).toString(); pos.fees1raw = big_(cw[1]).toString();
+  pos.pool = addr_(words_(r2[1])[0]);
+  pos.t0 = { address: pos.token0, decimals: Number(big_(words_(r2[2])[0])), symbol: decodeString_(r2[3]) };
+  pos.t1 = { address: pos.token1, decimals: Number(big_(words_(r2[4])[0])), symbol: decodeString_(r2[5]) };
+  var s0 = words_((await rpcBatch_([ec_(pos.pool, '0x3850c7bd')]))[0]);
+  pos.sqrtPriceX96 = big_(s0[0]).toString(); pos.tick = int24_(s0[1]);
+  var um = usdMap_([pos.t0, pos.t1], await feedPrices_());
+  pos.usd = um.usd; pos.stable = um.stable;
+  pos.kind = 'v3';
+  pos.block = parseInt(r[2].number, 16); pos.ts = parseInt(r[2].timestamp, 16);
+  // Comisiones de las últimas ~24 h (7200 bloques): diferencia del acumulado de collect() entre ahora y hace 24 h.
+  try {
+    var past = await rpcBatch_([ec_(NPM_V3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner, '0x' + (pos.block - 7200).toString(16))]);
+    var pw = words_(past[0]);
+    pos.fees24_0raw = (big_(cw[0]) - big_(pw[0])).toString();
+    pos.fees24_1raw = (big_(cw[1]) - big_(pw[1])).toString();
+  } catch (e) { pos.fees24_0raw = null; pos.fees24_1raw = null; }
+  return pos;
+}
+
+// ---------- v4 ----------
+function poolIdOf_(c0, c1, fee, tickSpacing, hooks) {
+  return '0x' + keccak256Hex_(pad_(c0) + pad_(c1) + hexN_(fee) + encI_(tickSpacing) + pad_(hooks));
+}
+async function readPosition_v4_(id) {
+  var tid = hexN_(id);
+  var r = await rpcBatch_([
+    ec_(NPM_V4, '0x7ba03aad' + tid),      // getPoolAndPositionInfo(tokenId)
+    ec_(NPM_V4, '0x1efeed33' + tid),      // getPositionLiquidity(tokenId)
+    ec_(NPM_V4, '0x6352211e' + tid),      // ownerOf(tokenId)
+    { method: 'eth_getBlockByNumber', params: ['latest', false] }
+  ]);
+  var w = words_(r[0]);
+  if (w.length < 6) throw new Error('La posición v4 no existe.');
+  var c0 = addr_(w[0]), c1 = addr_(w[1]), fee = Number(big_(w[2])), tsp = int24_(w[3]), hooks = addr_(w[4]);
+  var info = big_(w[5]);
+  var tl = Number(BigInt.asIntN(24, (info >> BigInt(8)) & BigInt(0xffffff)));
+  var tu = Number(BigInt.asIntN(24, (info >> BigInt(32)) & BigInt(0xffffff)));
+  var poolId = poolIdOf_(c0, c1, fee, tsp, hooks);
+  var sv = await rpcBatch_([
+    ec_(SV_V4, '0xc815641c' + pad_(poolId)),                                              // getSlot0(poolId)
+    ec_(SV_V4, '0xdacf1d2f' + pad_(poolId) + pad_(NPM_V4) + encI_(tl) + encI_(tu) + tid), // getPositionInfo(poolId, owner, tl, tu, salt)
+    ec_(SV_V4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu))                       // getFeeGrowthInside(poolId, tl, tu)
+  ]);
+  var s0 = words_(sv[0]);
+  var pi = words_(sv[1]), fg = words_(sv[2]);
+  var M256 = (BigInt(1) << BigInt(256)) - BigInt(1), Q128 = BigInt(1) << BigInt(128);
+  var liqPos = big_(pi[0]);
+  var d0 = (big_(fg[0]) - big_(pi[1])) & M256, d1 = (big_(fg[1]) - big_(pi[2])) & M256;
+  var t0 = await tokenMeta_(c0), t1 = await tokenMeta_(c1);
+  var um = usdMap_([t0, t1], await feedPrices_());
+  var pos = {
+    id: 'v4:' + id, owner: addr_(words_(r[2])[0]), token0: c0, token1: c1, fee: fee,
+    tl: tl, tu: tu, liquidity: big_(words_(r[1])[0]).toString(),
+    fees0raw: (liqPos * d0 / Q128).toString(), fees1raw: (liqPos * d1 / Q128).toString(),
+    pool: poolId, sqrtPriceX96: big_(s0[0]).toString(), tick: int24_(s0[1]),
+    t0: t0, t1: t1, usd: um.usd, stable: um.stable, kind: 'v4',
+    block: parseInt(r[3].number, 16), ts: parseInt(r[3].timestamp, 16)
+  };
+  // Comisiones de las últimas ~24 h (7200 bloques): liquidez × crecimiento de feeGrowthInside en ese lapso.
+  // Solo es válido si la liquidez no cambió en el periodo; si cambió, se deja sin dato.
+  pos.fees24_0raw = null; pos.fees24_1raw = null;
+  try {
+    var tag = '0x' + (pos.block - 7200).toString(16);
+    var old = await rpcBatch_([
+      ec_(SV_V4, '0xdacf1d2f' + pad_(poolId) + pad_(NPM_V4) + encI_(tl) + encI_(tu) + tid, null, tag),
+      ec_(SV_V4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu), null, tag)
+    ]);
+    var piOld = words_(old[0]), fgOld = words_(old[1]);
+    if (big_(piOld[0]) === liqPos && liqPos > BigInt(0)) {
+      var g0 = (big_(fg[0]) - big_(fgOld[0])) & M256, g1 = (big_(fg[1]) - big_(fgOld[1])) & M256;
+      pos.fees24_0raw = (liqPos * g0 / Q128).toString();
+      pos.fees24_1raw = (liqPos * g1 / Q128).toString();
+    }
+  } catch (e) { /* sin dato histórico */ }
+  return pos;
+}
+
+// ---------- v2 ----------
+async function readPosition_v2_(pair, wallet) {
+  pair = String(pair).trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(pair)) throw new Error('Dirección de par no válida');
+  var hasWallet = /^0x[0-9a-f]{40}$/i.test(wallet || '');
+  var calls = [ec_(pair, '0x0902f1ac'), ec_(pair, '0x0dfe1681'), ec_(pair, '0xd21220a7'), ec_(pair, '0x18160ddd'), { method: 'eth_getBlockByNumber', params: ['latest', false] }];
+  if (hasWallet) calls.push(ec_(pair, '0x70a08231' + pad_(wallet)));
+  var r = await rpcBatch_(calls);
+  var rw = words_(r[0]);
+  var r0 = big_(rw[0]), r1 = big_(rw[1]);
+  if (r0 === BigInt(0) || r1 === BigInt(0)) throw new Error('El par no tiene liquidez o no existe.');
+  var total = big_(words_(r[3])[0]);
+  var share = hasWallet ? Number(big_(words_(r[5])[0])) / Number(total) : 1;
+  var t0 = await tokenMeta_(addr_(words_(r[1])[0])), t1 = await tokenMeta_(addr_(words_(r[2])[0]));
+  var um = usdMap_([t0, t1], await feedPrices_());
+  var L = share * Math.sqrt(Number(r0) * Number(r1));
+  var sp = Math.sqrt(Number(r1) / Number(r0)) * Math.pow(2, 96);
+  var block = r[4];
+  return {
+    id: 'v2:' + pair, owner: hasWallet ? wallet.toLowerCase() : pair, token0: t0.address, token1: t1.address, fee: 3000,
+    tl: -FULL_TICK, tu: FULL_TICK, liquidity: String(BigInt(Math.round(L))), fees0raw: '0', fees1raw: '0',
+    pool: pair, sqrtPriceX96: String(BigInt(Math.round(sp))), tick: 0,
+    t0: t0, t1: t1, usd: um.usd, stable: um.stable, kind: 'v2', shareLabel: hasWallet ? 'Tu parte del par: ' + (share * 100).toFixed(4) + '%' : 'Pool completo (sin wallet)',
+    block: parseInt(block.number, 16), ts: parseInt(block.timestamp, 16)
+  };
+}
+
+/** Punto de entrada único. type: 'v2' | 'v3' | 'v4'. */
+async function readAny(type, id, wallet) {
+  id = String(id || '').trim();
+  var pos;
+  if (type === 'v2') pos = await readPosition_v2_(id, wallet);
+  else {
+    if (!/^\d+$/.test(id)) throw new Error('ID no válido');
+    pos = type === 'v4' ? await readPosition_v4_(id) : await readPosition_v3_(id);
+  }
+  return pos;
+}
+
+/** Lista las posiciones v3 de una wallet. */
+async function positionsOf(wallet) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('Dirección no válida');
+  var w = wallet.toLowerCase();
+  var n = Number(big_(words_((await rpcBatch_([ec_(NPM_V3, '0x70a08231' + pad_(w))]))[0])[0]));
+  n = Math.min(n, 50);
+  if (!n) return [];
+  var idCalls = []; for (var i = 0; i < n; i++) idCalls.push(ec_(NPM_V3, '0x2f745c59' + pad_(w) + hexN_(i)));
+  var ids = (await rpcBatch_(idCalls)).map(function (h) { return big_(words_(h)[0]).toString(); });
+  var ps = await rpcBatch_(ids.map(function (id) { return ec_(NPM_V3, '0x99fbab88' + hexN_(id)); }));
+  return ids.map(function (id, i) { var p = words_(ps[i]); return { id: id, fee: Number(big_(p[4])), active: big_(p[7]) > BigInt(0) }; });
+}
+
+/** Lista las posiciones v4 de una wallet. El contrato de v4 no permite enumerar los NFT de una wallet,
+ *  así que se consulta el historial de transferencias en Blockscout (gratis, sin clave) y luego se
+ *  confirma en la blockchain que cada NFT sigue siendo de la wallet. */
+async function positionsOfV4(wallet) {
+  if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('Dirección no válida');
+  var w = wallet.toLowerCase();
+  var url = 'https://eth.blockscout.com/api?module=account&action=tokennfttx&address=' + w + '&contractaddress=' + NPM_V4 + '&page=1&offset=1000&sort=asc';
+  var resp = await fetch(url);
+  if (!resp.ok) throw new Error('Blockscout HTTP ' + resp.status);
+  var j = await resp.json();
+  var rows = Array.isArray(j.result) ? j.result : [];
+  var ids = []; rows.forEach(function (x) { if (ids.indexOf(String(x.tokenID)) < 0) ids.push(String(x.tokenID)); });
+  if (!ids.length) return [];
+  ids = ids.slice(-50);
+  var calls = [];
+  ids.forEach(function (id) { calls.push(ec_(NPM_V4, '0x6352211e' + hexN_(id)), ec_(NPM_V4, '0x1efeed33' + hexN_(id)), ec_(NPM_V4, '0x7ba03aad' + hexN_(id))); });
+  var r = await rpcBatch_(calls);
+  var out = [], meta = {};
+  for (var i = 0; i < ids.length; i++) {
+    if (addr_(words_(r[i * 3])[0]) !== w) continue; // ya no es de la wallet
+    var k = words_(r[i * 3 + 2]), c0 = addr_(k[0]), c1 = addr_(k[1]);
+    for (var a of [c0, c1]) if (!meta[a]) meta[a] = await tokenMeta_(a);
+    out.push({ id: ids[i], fee: Number(big_(k[2])), active: big_(words_(r[i * 3 + 1])[0]) > BigInt(0), pair: meta[c0].symbol + '/' + meta[c1].symbol });
+  }
+  return out.reverse();
+}
+
+// ---------- keccak256 (Apps Script no lo incluye) ----------
+// Keccak-256 puro (Ethereum). Entrada y salida en hexadecimal sin 0x.
+var KECCAK_RC_ = [
+  BigInt('0x0000000000000001'), BigInt('0x0000000000008082'), BigInt('0x800000000000808a'), BigInt('0x8000000080008000'),
+  BigInt('0x000000000000808b'), BigInt('0x0000000080000001'), BigInt('0x8000000080008081'), BigInt('0x8000000000008009'),
+  BigInt('0x000000000000008a'), BigInt('0x0000000000000088'), BigInt('0x0000000080008009'), BigInt('0x000000008000000a'),
+  BigInt('0x000000008000808b'), BigInt('0x800000000000008b'), BigInt('0x8000000000008089'), BigInt('0x8000000000008003'),
+  BigInt('0x8000000000008002'), BigInt('0x8000000000000080'), BigInt('0x000000000000800a'), BigInt('0x800000008000000a'),
+  BigInt('0x8000000080008081'), BigInt('0x8000000000008080'), BigInt('0x0000000080000001'), BigInt('0x8000000080008008')
+];
+var KECCAK_ROT_ = [[0, 36, 3, 41, 18], [1, 44, 10, 45, 2], [62, 6, 43, 15, 61], [28, 55, 25, 21, 56], [27, 20, 39, 8, 14]];
+var KECCAK_M64_ = (BigInt(1) << BigInt(64)) - BigInt(1);
+
+function keccakF_(s) {
+  var r, x, y, i;
+  for (r = 0; r < 24; r++) {
+    var C = [], D = [], B = new Array(25);
+    for (x = 0; x < 5; x++) C[x] = s[x] ^ s[x + 5] ^ s[x + 10] ^ s[x + 15] ^ s[x + 20];
+    for (x = 0; x < 5; x++) D[x] = C[(x + 4) % 5] ^ rol64_(C[(x + 1) % 5], 1);
+    for (i = 0; i < 25; i++) s[i] = s[i] ^ D[i % 5];
+    for (x = 0; x < 5; x++) for (y = 0; y < 5; y++) B[y + 5 * ((2 * x + 3 * y) % 5)] = rol64_(s[x + 5 * y], KECCAK_ROT_[x][y]);
+    for (x = 0; x < 5; x++) for (y = 0; y < 5; y++) s[x + 5 * y] = B[x + 5 * y] ^ ((~B[((x + 1) % 5) + 5 * y] & KECCAK_M64_) & B[((x + 2) % 5) + 5 * y]);
+    s[0] = s[0] ^ KECCAK_RC_[r];
+  }
+}
+function rol64_(v, n) {
+  if (n === 0) return v;
+  var bn = BigInt(n);
+  return ((v << bn) | (v >> (BigInt(64) - bn))) & KECCAK_M64_;
+}
+function keccak256Hex_(hex) {
+  var bytes = [];
+  for (var i = 0; i < hex.length; i += 2) bytes.push(parseInt(hex.substr(i, 2), 16));
+  var rate = 136;
+  bytes.push(1);
+  while (bytes.length % rate !== 0) bytes.push(0);
+  bytes[bytes.length - 1] |= 0x80;
+  var s = new Array(25);
+  for (var k = 0; k < 25; k++) s[k] = BigInt(0);
+  for (var off = 0; off < bytes.length; off += rate) {
+    for (var l = 0; l < rate / 8; l++) {
+      var lane = BigInt(0);
+      for (var b = 7; b >= 0; b--) lane = (lane << BigInt(8)) | BigInt(bytes[off + l * 8 + b]);
+      s[l] = s[l] ^ lane;
+    }
+    keccakF_(s);
+  }
+  var out = '';
+  for (var o = 0; o < 4; o++) {
+    var v = s[o];
+    for (var q = 0; q < 8; q++) { out += ('0' + Number(v & BigInt(0xff)).toString(16)).slice(-2); v = v >> BigInt(8); }
+  }
+  return out;
+}
+
+
+// ---------- ajustes y registros (se guardan en este navegador) ----------
+var LS_PREFIX = 'uv3:', LS_ENTRIES = 'uv3entries';
+function lsGet_(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+function lsSet_(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+function getSettings() {
+  var out = {};
+  try { for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k.indexOf(LS_PREFIX) === 0) { try { out[k.slice(LS_PREFIX.length)] = JSON.parse(localStorage.getItem(k)); } catch (e) {} } } } catch (e) {}
+  return out;
+}
+function saveSetting(key, value) { lsSet_(LS_PREFIX + key, value === null || value === undefined ? null : JSON.stringify(value)); return true; }
+var ENTRY_HEADERS = ['Posición', 'Tipo de pool', 'Par', 'Fecha de apertura', 'ID NFT (v3/v4)', 'Nivel de comisión',
+  'Cantidad token0', 'Token0', 'Precio entrada token0 (USD)', 'Cantidad token1', 'Token1', 'Precio entrada token1 (USD)',
+  'Monto total entrada (USD)', 'Actualizado'];
+function entries_() { try { return JSON.parse(lsGet_(LS_ENTRIES) || '{}') || {}; } catch (e) { return {}; } }
+/** Guarda o actualiza UN registro por posición con los datos de entrada. */
+function saveEntry(e) {
+  var all = entries_();
+  all[String(e.id)] = [String(e.id), e.kind, e.pair, e.open || '', e.nft || '', e.fee,
+    e.amt0, e.sym0, e.usd0, e.amt1, e.sym1, e.usd1, e.total, new Date().toISOString()];
+  lsSet_(LS_ENTRIES, JSON.stringify(all));
+  return { count: Object.keys(all).length };
+}
+function clearEntries() { lsSet_(LS_ENTRIES, null); return true; }
+/** CSV para Excel en español: separador ';', coma decimal y BOM UTF-8. */
+function entriesCsv() {
+  var cell = function (v) {
+    if (typeof v === 'number') v = String(v).replace('.', ',');
+    else if (typeof v === 'string' && /^\d+\.\d+%$/.test(v)) v = v.replace('.', ',');
+    v = v == null ? '' : String(v);
+    return /[;"\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v;
+  };
+  var rows = [ENTRY_HEADERS].concat(Object.keys(entries_()).map(function (k) { return entries_()[k]; }));
+  return '\ufeff' + rows.map(function (r) { return r.map(cell).join(';'); }).join('\r\n');
+}
+return { readAny: readAny, positionsOf: positionsOf, positionsOfV4: positionsOfV4, getSettings: getSettings, saveSetting: saveSetting,
+  saveEntry: saveEntry, clearEntries: clearEntries, entriesCsv: entriesCsv, entryCount: function () { return Object.keys(entries_()).length; } };
+})();
+</script>
+<script>
 (function () {
 'use strict';
 const DEFAULTS = { '1385639': { open: '2026-10-17T10:53', entry: 0.02973, entryUsd: 2418.14, capital: 2918.61, collected: 0, invert: true } };
@@ -173,9 +519,9 @@ const $ = (id) => document.getElementById(id);
 let S = {};
 const store = {
   get(k, d) { return Object.prototype.hasOwnProperty.call(S, k) ? S[k] : d; },
-  set(k, v) { S[k] = v; google.script.run.withFailureHandler(() => {}).saveSetting(k, v); },
+  set(k, v) { S[k] = v; BACKEND.saveSetting(k, v); },
 };
-const server = (fn, ...args) => new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler((e) => rej(e instanceof Error ? e : new Error(String(e && e.message || e))))[fn](...args));
+const server = (fn, ...args) => Promise.resolve().then(() => BACKEND[fn](...args));
 const readAny = (type, id, wallet) => server('readAny', type, id, wallet);
 const positionsOf = (w) => server('positionsOf', w);
 const positionsOfV4 = (w) => server('positionsOfV4', w);
@@ -294,7 +640,8 @@ async function load(key) {
     persistEntry();
     status('Actualizado: ' + (pos.shareLabel ? pos.shareLabel + '. ' : '') + 'bloque ' + pos.block.toLocaleString('es-VE') + ', ' + new Date(pos.ts * 1000).toLocaleString('es-VE') + '.');
   } catch (e) {
-    status('No se pudo leer la posición: ' + e.message + (cached ? ' Se muestran los últimos datos guardados.' : ''), true);
+    const net = /failed to fetch|networkerror|load failed|rpc http/i.test(String(e && e.message));
+    status('No se pudo leer la posición: ' + (net ? 'no hay conexión con los nodos de Ethereum. Si estás en la vista previa del chat, ábrela en tu navegador (la vista previa bloquea internet).' : e.message) + (cached ? ' Se muestran los últimos datos guardados.' : ''), true);
   } finally { $('btnLoad').disabled = false; }
 }
 
@@ -597,12 +944,19 @@ let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTime
 // ---------- registro de entrada ----------
 async function persistEntry() {
   if (!current || !current.entry) return;
-  try { const r = await server('saveEntry', current.entry); $('sheetLink').href = r.url; $('histNote').textContent = 'Registro guardado.'; }
+  try { const r = await server('saveEntry', current.entry); $('histNote').textContent = 'Registro guardado (' + r.count + (r.count === 1 ? ' posición' : ' posiciones') + ' en este navegador).'; }
   catch (e) { $('histNote').textContent = 'No se pudo guardar el registro: ' + e.message; }
 }
 $('btnClearHist').addEventListener('click', async () => {
-  try { await server('clearHistory'); $('histNote').textContent = 'Historial anterior borrado.'; }
-  catch (e) { $('histNote').textContent = 'No se pudo borrar: ' + e.message; }
+  if (!confirm('¿Borrar todos los registros de entrada guardados en este navegador?')) return;
+  await server('clearEntries'); $('histNote').textContent = 'Registros borrados.';
+});
+$('btnCsv').addEventListener('click', async () => {
+  const csv = await server('entriesCsv');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = 'registros-uniswap.csv'; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
 });
 
 $('chkFees').addEventListener('change', () => { if (current) render(); });
