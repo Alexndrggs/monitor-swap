@@ -56,12 +56,13 @@ dl.facts dt{color:var(--muted);font-size:.76rem}dl.facts dd{margin:0}
 <div class="wrap">
   <header>
     <h1 style="text-align:center;width:100%">Monitor de posiciones Uniswap (v2, v3 y v4)</h1>
-    <p class="note">Lee tu posición directamente de la blockchain de Ethereum (contratos de Uniswap v2, v3 o v4, según la pool, y oráculos Chainlink). Tus valores y registros se guardan en este navegador (no se envían a ningún servidor).</p>
+    <p class="note">Lee tu posición directamente de la blockchain (Ethereum, Base, Arbitrum, Optimism, Polygon o BNB Chain; contratos de Uniswap v2, v3 o v4 y oráculos Chainlink de cada red). Tus valores y registros se guardan en este navegador (no se envían a ningún servidor).</p>
   </header>
 
   <section class="card">
     <h2>Posición</h2>
     <div class="bar">
+      <label>Red<select id="pnet"><option value="eth">Ethereum</option><option value="base">Base</option><option value="arb">Arbitrum</option><option value="op">Optimism</option><option value="pol">Polygon</option><option value="bnb">BNB Chain</option></select></label>
       <label>Tipo de pool<select id="ptype"><option value="v3">Uniswap v3 · NFT</option><option value="v4">Uniswap v4 · NFT</option><option value="v2">Uniswap v2 · par</option></select></label>
       <label id="lblId">ID del NFT de la posición<input id="tokenId" inputmode="numeric" placeholder="ej. 1385639"></label>
       <button class="primary" id="btnLoad">Cargar / actualizar</button>
@@ -168,27 +169,66 @@ dl.facts dt{color:var(--muted);font-size:.76rem}dl.facts dd{margin:0}
 // ===== Lectura on-chain y almacenamiento local (antes Codigo.gs en Google Apps Script) =====
 const BACKEND = (function () {
 'use strict';
-var RPCS = ['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org']; // publicnode no sirve estado histórico; drpc sí (se usa de respaldo)
-var NPM_V3 = '0xc36442b4a4522e871399cd717abdd847ab11fe88';
-var FACTORY_V3 = '0x1f98431c8ad98523631ae4a59f267346ea31f984';
-var NPM_V4 = '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e';
-var SV_V4 = '0x7ffe42c4a5deea5b0fec41c94c136cf115597227';
-var FACTORY_V2 = '0x5c69bee701ef814a2b6a3edd4b1652cb9cc5aa6f';
-var FEEDS = { ETH: '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', BTC: '0xf4030086522a5beea4988f8ca5b36dbc97bee88c' };
-var ZERO = '0x0000000000000000000000000000000000000000';
-var TOKENS = {
-  '0x0000000000000000000000000000000000000000': { feed: 'ETH', native: true },
-  '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { feed: 'ETH' },
-  '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { feed: 'BTC' },
-  '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48': { usd: 1, stable: true },
-  '0xdac17f958d2ee523a2206206994597c13d831ec7': { usd: 1, stable: true },
-  '0x6b175474e89094c44da98b954eedeac495271d0f': { usd: 1, stable: true }
+// ===== Redes soportadas (direcciones oficiales de Uniswap y oráculos Chainlink, verificadas on-chain) =====
+function stables_(list) { var o = {}; list.forEach(function (a) { o[a] = { usd: 1, stable: true }; }); return o; }
+var NETS = {
+  eth: { name: 'Ethereum', native: 'ETH',
+    rpcs: ['https://ethereum-rpc.publicnode.com', 'https://eth.drpc.org'],
+    npm3: '0xc36442b4a4522e871399cd717abdd847ab11fe88', f3: '0x1f98431c8ad98523631ae4a59f267346ea31f984',
+    pm4: '0xbd216513d74c8cf14cf4747e6aaa6420ff64ee9e', sv4: '0x7ffe42c4a5deea5b0fec41c94c136cf115597227',
+    feeds: { ETH: '0x5f4ec3df9cbd43714fe2740f5e3616155c5b8419', BTC: '0xf4030086522a5beea4988f8ca5b36dbc97bee88c' },
+    blockscout: 'https://eth.blockscout.com',
+    tokens: Object.assign({ '0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2': { feed: 'ETH' }, '0x2260fac5e5542a773aa44fbcfedf7c193bc2c599': { feed: 'BTC' }, '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': { feed: 'BTC' } },
+      stables_(['0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48', '0xdac17f958d2ee523a2206206994597c13d831ec7', '0x6b175474e89094c44da98b954eedeac495271d0f'])) },
+  base: { name: 'Base', native: 'ETH',
+    rpcs: ['https://base-rpc.publicnode.com', 'https://base.drpc.org', 'https://mainnet.base.org'],
+    npm3: '0x03a520b32c04bf3beef7beb72e919cf822ed34f1', f3: '0x33128a8fc17869897dce68ed026d694621f6fdfd',
+    pm4: '0x7c5f5a4bbd8fd63184577525326123b519429bdc', sv4: '0xa3c0c9b65bad0b08107aa264b0f3db444b867a71',
+    feeds: { ETH: '0x71041dddad3595f9ced3dccfbe3d1f4b0a16bb70', BTC: '0x64c911996d3c6ac71f9b455b1e8e7266bcbd848f' },
+    blockscout: 'https://base.blockscout.com',
+    tokens: Object.assign({ '0x4200000000000000000000000000000000000006': { feed: 'ETH' }, '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf': { feed: 'BTC' }, '0x0555e30da8f98308edb960aa94c0db47230d2b9c': { feed: 'BTC' } },
+      stables_(['0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', '0xd9aaec86b65d86f6a7b5b1b0c42ffa531710b6ca', '0xfde4c96c8593536e31f229ea8f37b2ada2699bb2', '0x50c5725949a6f0c72e6c4a641f24049a917db0cb'])) },
+  arb: { name: 'Arbitrum', native: 'ETH',
+    rpcs: ['https://arbitrum-one-rpc.publicnode.com', 'https://arbitrum.drpc.org'],
+    npm3: '0xc36442b4a4522e871399cd717abdd847ab11fe88', f3: '0x1f98431c8ad98523631ae4a59f267346ea31f984',
+    pm4: '0xd88f38f930b7952f2db2432cb002e7abbf3dd869', sv4: '0x76fd297e2d437cd7f76d50f01afe6160f86e9990',
+    feeds: { ETH: '0x639fe6ab55c921f74e7fac1ee960c0b6293ba612', BTC: '0x6ce185860a4963106506c203335a2910413708e9' },
+    blockscout: 'https://arbitrum.blockscout.com',
+    tokens: Object.assign({ '0x82af49447d8a07e3bd95bd0d56f35241523fbab1': { feed: 'ETH' }, '0x2f2a2543b76a4166549f7aab2e75bef0aefc5b0f': { feed: 'BTC' } },
+      stables_(['0xaf88d065e77c8cc2239327c5edb3a432268e5831', '0xff970a61a04b1ca14834a43f5de4533ebddb5cc8', '0xfd086bc7cd5c481dcc9c85ebe478a1c0b69fcbb9', '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'])) },
+  op: { name: 'Optimism', native: 'ETH',
+    rpcs: ['https://optimism-rpc.publicnode.com', 'https://optimism.drpc.org'],
+    npm3: '0xc36442b4a4522e871399cd717abdd847ab11fe88', f3: '0x1f98431c8ad98523631ae4a59f267346ea31f984',
+    pm4: '0x3c3ea4b57a46241e54610e5f022e5c45859a1017', sv4: '0xc18a3169788f4f75a170290584eca6395c75ecdb',
+    feeds: { ETH: '0x13e3ee699d1909e989722e753853ae30b17e08c5', BTC: '0xd702dd976fb76fffc2d3963d037dfdae5b04e593' },
+    blockscout: null,
+    tokens: Object.assign({ '0x4200000000000000000000000000000000000006': { feed: 'ETH' }, '0x68f180fcce6836688e9084f035309e29bf0a2095': { feed: 'BTC' } },
+      stables_(['0x0b2c639c533813f4aa9d7837caf62653d097ff85', '0x7f5c764cbc14f9669b88837ca1490cca17c31607', '0x94b008aa00579c1307b0ef2c499ad98a8ce58e58', '0xda10009cbd5d07dd0cecc66161fc93d7c9000da1'])) },
+  pol: { name: 'Polygon', native: 'POL',
+    rpcs: ['https://polygon-bor-rpc.publicnode.com', 'https://polygon.drpc.org'],
+    npm3: '0xc36442b4a4522e871399cd717abdd847ab11fe88', f3: '0x1f98431c8ad98523631ae4a59f267346ea31f984',
+    pm4: '0x1ec2ebf4f37e7363fdfe3551602425af0b3ceef9', sv4: '0x5ea1bd7974c8a611cbab0bdcafcb1d9cc9b3ba5a',
+    feeds: { ETH: '0xf9680d99d6c9589e2a93a78a04a279e509205945', BTC: '0xc907e116054ad103354f2d350fd2514433d57f6f', POL: '0xab594600376ec9fd91f8e885dadf0ce036862de0' },
+    blockscout: 'https://polygon.blockscout.com',
+    tokens: Object.assign({ '0x7ceb23fd6bc0add59e62ac25578270cff1b9f619': { feed: 'ETH' }, '0x1bfd67037b42cf73acf2047067bd4f2c47d9bfd6': { feed: 'BTC' }, '0x0d500b1d8e8ef31e21c99d1db9a6444d3adf1270': { feed: 'POL' } },
+      stables_(['0x3c499c542cef5e3811e1192ce70d8cc03d5c3359', '0x2791bca1f2de4661ed88a30c99a7a9449aa84174', '0xc2132d05d31c914a87c6611c10748aeb04b58e8f', '0x8f3cf7ad23cd3cadbd9735aff958023239c6a063'])) },
+  bnb: { name: 'BNB Chain', native: 'BNB',
+    rpcs: ['https://bsc-rpc.publicnode.com', 'https://bsc.drpc.org'],
+    npm3: '0x7b8a01b39d58278b5de7e48c8449c9f4f5170613', f3: '0xdb1d10011ad0ff90774d0c6bb92e5c5c8b4461f7',
+    pm4: '0x7a4a5c919ae2541aed11041a1aeee68f1287f95b', sv4: '0xd13dd3d6e93f276fafc9db9e6bb47c1180aee0c4',
+    feeds: { ETH: '0x9ef1b8c0e4f7dc8bf5719ea496883dc6401d5b2e', BTC: '0x264990fbd0a4796a3e3d8e37c4d5f87a3aca5ebf', BNB: '0x0567f2323251f0aab15c8dfb1967e4e8a7d42aee' },
+    blockscout: null,
+    tokens: Object.assign({ '0xbb4cdb9cbd36b01bd1cbaebf2de08d9173bc095c': { feed: 'BNB' }, '0x2170ed0880ac9a755fd29b2688956bd959f933f8': { feed: 'ETH' }, '0x7130d2a12b9bcbfae4f2634d864a1ee1ce3ead9c': { feed: 'BTC' } },
+      stables_(['0x55d398326f99059ff775485246999027b3197955', '0x8ac76a51cc950d9822d68b83fe1ad97b32cd580d'])) }
 };
+Object.keys(NETS).forEach(function (k) { var n = NETS[k]; n.key = k; n.tokens['0x0000000000000000000000000000000000000000'] = { feed: n.native === 'ETH' ? 'ETH' : n.native, native: true }; });
+var N = NETS.eth; // red activa (se fija en cada lectura)
+var ZERO = '0x0000000000000000000000000000000000000000';
 var FULL_TICK = 887220;
 
 // ---------- RPC ----------
 async function rpcBatch_(calls) {
-  var last;
+  var last, RPCS = N.rpcs;
   for (var u = 0; u < RPCS.length; u++) {
     try {
       var body = calls.map(function (c, i) { return { jsonrpc: '2.0', id: i, method: c.method, params: c.params }; });
@@ -225,18 +265,30 @@ function decodeString_(h) {
   } catch (e) { return '?'; }
 }
 async function tokenMeta_(address) {
-  if (address === ZERO) return { address: ZERO, decimals: 18, symbol: 'ETH' };
+  if (address === ZERO) return { address: ZERO, decimals: 18, symbol: N.native };
   var r = await rpcBatch_([ec_(address, '0x313ce567'), ec_(address, '0x95d89b41')]);
   return { address: address, decimals: Number(big_(words_(r[0])[0])), symbol: decodeString_(r[1]) };
 }
 async function feedPrices_() {
-  var r = await rpcBatch_([ec_(FEEDS.ETH, '0xfeaf968c'), ec_(FEEDS.BTC, '0xfeaf968c')]);
-  return { ETH: Number(big_(words_(r[0])[1])) / 1e8, BTC: Number(big_(words_(r[1])[1])) / 1e8 };
+  var keys = Object.keys(N.feeds);
+  var r = await rpcBatch_(keys.map(function (k) { return ec_(N.feeds[k], '0xfeaf968c'); }));
+  var out = {}; keys.forEach(function (k, i) { out[k] = Number(big_(words_(r[i])[1])) / 1e8; });
+  return out;
+}
+/** Bloque de hace ~24 h, calculado con las marcas de tiempo (cada red produce bloques a distinto ritmo). */
+async function blockAgo_(cur, curTs, secs) {
+  var K = Math.min(cur - 1, 20000);
+  var h = await rpcBatch_([{ method: 'eth_getBlockByNumber', params: ['0x' + (cur - K).toString(16), false] }]);
+  var bt = (curTs - parseInt(h[0].timestamp, 16)) / K;              // segundos por bloque
+  var guess = Math.max(1, cur - Math.round(secs / bt));
+  var g = await rpcBatch_([{ method: 'eth_getBlockByNumber', params: ['0x' + guess.toString(16), false] }]);
+  var err = (curTs - secs) - parseInt(g[0].timestamp, 16);          // ajuste fino
+  return Math.max(1, guess + Math.round(err / bt));
 }
 function usdMap_(tokens, feeds) {
   var usd = {}, stable = {};
   tokens.forEach(function (t) {
-    var m = TOKENS[t.address];
+    var m = N.tokens[t.address];
     if (m && m.feed) usd[t.address] = feeds[m.feed];
     else if (m && m.usd) usd[t.address] = m.usd;
     stable[t.address] = !!(m && m.stable);
@@ -246,15 +298,15 @@ function usdMap_(tokens, feeds) {
 
 // ---------- v3 ----------
 async function readPosition_v3_(id) {
-  var r = await rpcBatch_([ec_(NPM_V3, '0x99fbab88' + hexN_(id)), ec_(NPM_V3, '0x6352211e' + hexN_(id)), { method: 'eth_getBlockByNumber', params: ['latest', false] }]);
+  var r = await rpcBatch_([ec_(N.npm3, '0x99fbab88' + hexN_(id)), ec_(N.npm3, '0x6352211e' + hexN_(id)), { method: 'eth_getBlockByNumber', params: ['latest', false] }]);
   var w = words_(r[0]);
   var owner = addr_(words_(r[1])[0]);
   var pos = { id: id, owner: owner, token0: addr_(w[2]), token1: addr_(w[3]), fee: Number(big_(w[4])), tl: int24_(w[5]), tu: int24_(w[6]), liquidity: big_(w[7]).toString() };
   if (/^0x0+$/.test(pos.token0)) throw new Error('La posición no existe.');
   var max = pad_('ffffffffffffffffffffffffffffffff');
   var r2 = await rpcBatch_([
-    ec_(NPM_V3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner),
-    ec_(FACTORY_V3, '0x1698ee82' + pad_(pos.token0) + pad_(pos.token1) + hexN_(pos.fee)),
+    ec_(N.npm3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner),
+    ec_(N.f3, '0x1698ee82' + pad_(pos.token0) + pad_(pos.token1) + hexN_(pos.fee)),
     ec_(pos.token0, '0x313ce567'), ec_(pos.token0, '0x95d89b41'),
     ec_(pos.token1, '0x313ce567'), ec_(pos.token1, '0x95d89b41')
   ]);
@@ -269,9 +321,9 @@ async function readPosition_v3_(id) {
   pos.usd = um.usd; pos.stable = um.stable;
   pos.kind = 'v3';
   pos.block = parseInt(r[2].number, 16); pos.ts = parseInt(r[2].timestamp, 16);
-  // Comisiones de las últimas ~24 h (7200 bloques): diferencia del acumulado de collect() entre ahora y hace 24 h.
+  // Comisiones de las últimas ~24 h: diferencia del acumulado de collect() entre ahora y hace 24 h.
   try {
-    var past = await rpcBatch_([ec_(NPM_V3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner, '0x' + (pos.block - 7200).toString(16))]);
+    var past = await rpcBatch_([ec_(N.npm3, '0xfc6f7865' + hexN_(id) + pad_(owner) + max + max, owner, '0x' + (await blockAgo_(pos.block, pos.ts, 86400)).toString(16))]);
     var pw = words_(past[0]);
     pos.fees24_0raw = (big_(cw[0]) - big_(pw[0])).toString();
     pos.fees24_1raw = (big_(cw[1]) - big_(pw[1])).toString();
@@ -286,9 +338,9 @@ function poolIdOf_(c0, c1, fee, tickSpacing, hooks) {
 async function readPosition_v4_(id) {
   var tid = hexN_(id);
   var r = await rpcBatch_([
-    ec_(NPM_V4, '0x7ba03aad' + tid),      // getPoolAndPositionInfo(tokenId)
-    ec_(NPM_V4, '0x1efeed33' + tid),      // getPositionLiquidity(tokenId)
-    ec_(NPM_V4, '0x6352211e' + tid),      // ownerOf(tokenId)
+    ec_(N.pm4, '0x7ba03aad' + tid),      // getPoolAndPositionInfo(tokenId)
+    ec_(N.pm4, '0x1efeed33' + tid),      // getPositionLiquidity(tokenId)
+    ec_(N.pm4, '0x6352211e' + tid),      // ownerOf(tokenId)
     { method: 'eth_getBlockByNumber', params: ['latest', false] }
   ]);
   var w = words_(r[0]);
@@ -299,9 +351,9 @@ async function readPosition_v4_(id) {
   var tu = Number(BigInt.asIntN(24, (info >> BigInt(32)) & BigInt(0xffffff)));
   var poolId = poolIdOf_(c0, c1, fee, tsp, hooks);
   var sv = await rpcBatch_([
-    ec_(SV_V4, '0xc815641c' + pad_(poolId)),                                              // getSlot0(poolId)
-    ec_(SV_V4, '0xdacf1d2f' + pad_(poolId) + pad_(NPM_V4) + encI_(tl) + encI_(tu) + tid), // getPositionInfo(poolId, owner, tl, tu, salt)
-    ec_(SV_V4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu))                       // getFeeGrowthInside(poolId, tl, tu)
+    ec_(N.sv4, '0xc815641c' + pad_(poolId)),                                              // getSlot0(poolId)
+    ec_(N.sv4, '0xdacf1d2f' + pad_(poolId) + pad_(N.pm4) + encI_(tl) + encI_(tu) + tid), // getPositionInfo(poolId, owner, tl, tu, salt)
+    ec_(N.sv4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu))                       // getFeeGrowthInside(poolId, tl, tu)
   ]);
   var s0 = words_(sv[0]);
   var pi = words_(sv[1]), fg = words_(sv[2]);
@@ -318,14 +370,14 @@ async function readPosition_v4_(id) {
     t0: t0, t1: t1, usd: um.usd, stable: um.stable, kind: 'v4',
     block: parseInt(r[3].number, 16), ts: parseInt(r[3].timestamp, 16)
   };
-  // Comisiones de las últimas ~24 h (7200 bloques): liquidez × crecimiento de feeGrowthInside en ese lapso.
+  // Comisiones de las últimas ~24 h: liquidez × crecimiento de feeGrowthInside en ese lapso.
   // Solo es válido si la liquidez no cambió en el periodo; si cambió, se deja sin dato.
   pos.fees24_0raw = null; pos.fees24_1raw = null;
   try {
-    var tag = '0x' + (pos.block - 7200).toString(16);
+    var tag = '0x' + (await blockAgo_(pos.block, pos.ts, 86400)).toString(16);
     var old = await rpcBatch_([
-      ec_(SV_V4, '0xdacf1d2f' + pad_(poolId) + pad_(NPM_V4) + encI_(tl) + encI_(tu) + tid, null, tag),
-      ec_(SV_V4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu), null, tag)
+      ec_(N.sv4, '0xdacf1d2f' + pad_(poolId) + pad_(N.pm4) + encI_(tl) + encI_(tu) + tid, null, tag),
+      ec_(N.sv4, '0x53e9c1fb' + pad_(poolId) + encI_(tl) + encI_(tu), null, tag)
     ]);
     var piOld = words_(old[0]), fgOld = words_(old[1]);
     if (big_(piOld[0]) === liqPos && liqPos > BigInt(0)) {
@@ -365,7 +417,8 @@ async function readPosition_v2_(pair, wallet) {
 }
 
 /** Punto de entrada único. type: 'v2' | 'v3' | 'v4'. */
-async function readAny(type, id, wallet) {
+async function readAny(type, id, wallet, net) {
+  N = NETS[net] || NETS.eth;
   id = String(id || '').trim();
   var pos;
   if (type === 'v2') pos = await readPosition_v2_(id, wallet);
@@ -373,29 +426,34 @@ async function readAny(type, id, wallet) {
     if (!/^\d+$/.test(id)) throw new Error('ID no válido');
     pos = type === 'v4' ? await readPosition_v4_(id) : await readPosition_v3_(id);
   }
+  pos.net = N.key; pos.netName = N.name;
+  if (N.key !== 'eth') pos.id = N.key + ':' + pos.id; // en Ethereum se conservan los ID de siempre
   return pos;
 }
 
 /** Lista las posiciones v3 de una wallet. */
-async function positionsOf(wallet) {
+async function positionsOf(wallet, net) {
+  N = NETS[net] || NETS.eth;
   if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('Dirección no válida');
   var w = wallet.toLowerCase();
-  var n = Number(big_(words_((await rpcBatch_([ec_(NPM_V3, '0x70a08231' + pad_(w))]))[0])[0]));
+  var n = Number(big_(words_((await rpcBatch_([ec_(N.npm3, '0x70a08231' + pad_(w))]))[0])[0]));
   n = Math.min(n, 50);
   if (!n) return [];
-  var idCalls = []; for (var i = 0; i < n; i++) idCalls.push(ec_(NPM_V3, '0x2f745c59' + pad_(w) + hexN_(i)));
+  var idCalls = []; for (var i = 0; i < n; i++) idCalls.push(ec_(N.npm3, '0x2f745c59' + pad_(w) + hexN_(i)));
   var ids = (await rpcBatch_(idCalls)).map(function (h) { return big_(words_(h)[0]).toString(); });
-  var ps = await rpcBatch_(ids.map(function (id) { return ec_(NPM_V3, '0x99fbab88' + hexN_(id)); }));
+  var ps = await rpcBatch_(ids.map(function (id) { return ec_(N.npm3, '0x99fbab88' + hexN_(id)); }));
   return ids.map(function (id, i) { var p = words_(ps[i]); return { id: id, fee: Number(big_(p[4])), active: big_(p[7]) > BigInt(0) }; });
 }
 
 /** Lista las posiciones v4 de una wallet. El contrato de v4 no permite enumerar los NFT de una wallet,
  *  así que se consulta el historial de transferencias en Blockscout (gratis, sin clave) y luego se
  *  confirma en la blockchain que cada NFT sigue siendo de la wallet. */
-async function positionsOfV4(wallet) {
+async function positionsOfV4(wallet, net) {
+  N = NETS[net] || NETS.eth;
+  if (!N.blockscout) throw new Error('la búsqueda automática de v4 no está disponible en ' + N.name);
   if (!/^0x[0-9a-fA-F]{40}$/.test(wallet)) throw new Error('Dirección no válida');
   var w = wallet.toLowerCase();
-  var url = 'https://eth.blockscout.com/api?module=account&action=tokennfttx&address=' + w + '&contractaddress=' + NPM_V4 + '&page=1&offset=1000&sort=asc';
+  var url = N.blockscout + '/api?module=account&action=tokennfttx&address=' + w + '&contractaddress=' + N.pm4 + '&page=1&offset=1000&sort=asc';
   var resp = await fetch(url);
   if (!resp.ok) throw new Error('Blockscout HTTP ' + resp.status);
   var j = await resp.json();
@@ -404,7 +462,7 @@ async function positionsOfV4(wallet) {
   if (!ids.length) return [];
   ids = ids.slice(-50);
   var calls = [];
-  ids.forEach(function (id) { calls.push(ec_(NPM_V4, '0x6352211e' + hexN_(id)), ec_(NPM_V4, '0x1efeed33' + hexN_(id)), ec_(NPM_V4, '0x7ba03aad' + hexN_(id))); });
+  ids.forEach(function (id) { calls.push(ec_(N.pm4, '0x6352211e' + hexN_(id)), ec_(N.pm4, '0x1efeed33' + hexN_(id)), ec_(N.pm4, '0x7ba03aad' + hexN_(id))); });
   var r = await rpcBatch_(calls);
   var out = [], meta = {};
   for (var i = 0; i < ids.length; i++) {
@@ -522,9 +580,10 @@ const store = {
   set(k, v) { S[k] = v; BACKEND.saveSetting(k, v); },
 };
 const server = (fn, ...args) => Promise.resolve().then(() => BACKEND[fn](...args));
-const readAny = (type, id, wallet) => server('readAny', type, id, wallet);
-const positionsOf = (w) => server('positionsOf', w);
-const positionsOfV4 = (w) => server('positionsOfV4', w);
+const readAny = (type, id, wallet, net) => server('readAny', type, id, wallet, net);
+const positionsOf = (w, net) => server('positionsOf', w, net);
+const positionsOfV4 = (w, net) => server('positionsOfV4', w, net);
+const NET_NAMES = { eth: 'Ethereum', base: 'Base', arb: 'Arbitrum', op: 'Optimism', pol: 'Polygon', bnb: 'BNB Chain' };
 
 // ---------- math ----------
 // raw amounts for pool price (raw token1/token0) pr
@@ -612,36 +671,45 @@ function renderSaved() {
 
 function status(t, err) { const s = $('status'); s.textContent = t; s.classList.toggle('err', !!err); }
 
-function parseKey(key) { const i = String(key).indexOf(':'); return i < 0 ? ['v3', String(key)] : [key.slice(0, i), key.slice(i + 1)]; }
+// Clave de posición: [red:]tipo:id. Sin red = Ethereum (así se conservan las posiciones guardadas antes).
+function parseKey(key) {
+  const parts = String(key || '').split(':');
+  if (parts.length >= 3 && NET_NAMES[parts[0]]) return [parts[1], parts.slice(2).join(':'), parts[0]];
+  if (parts.length >= 2) return [parts[0], parts.slice(1).join(':'), 'eth'];
+  return ['v3', parts[0], 'eth'];
+}
+function makeKey(net, type, id) { return (net && net !== 'eth' ? net + ':' : '') + type + ':' + id; }
 function updLabel() {
   const t = $('ptype').value;
   $('lblId').firstChild.textContent = t === 'v2' ? 'Dirección del par (pair) ' : 'ID del NFT de la posición ';
   $('tokenId').placeholder = t === 'v2' ? '0xbb2b8038a1640196fbe3e38816f3e67cba72d940' : '1385639';
 }
-function setSel(key) { const [t, i] = parseKey(key); $('ptype').value = t; updLabel(); $('tokenId').value = i; }
-function curKey() { return $('ptype').value + ':' + $('tokenId').value.trim(); }
+function setSel(key) { const [t, i, n] = parseKey(key); $('pnet').value = n; $('ptype').value = t; updLabel(); $('tokenId').value = i; }
+function curKey() { return makeKey($('pnet').value, $('ptype').value, $('tokenId').value.trim()); }
 async function load(key) {
-  const [type, raw] = parseKey(key || '');
+  const [type, raw, net] = parseKey(key || '');
   const id = String(raw).trim();
   if (!id) { status('Escribe un ID o una dirección.', true); return; }
   const wallet = $('wallet').value.trim();
-  const sid = type === 'v3' ? id : type + ':' + (type === 'v2' ? id.toLowerCase() : id);
+  const sid0 = type === 'v3' ? id : type + ':' + (type === 'v2' ? id.toLowerCase() : id);
+  const sid = net === 'eth' ? sid0 : net + ':' + sid0;
+  const k = makeKey(net, type, id), netName = NET_NAMES[net] || net;
   const cached = store.get('pos:' + sid, null);
   if (cached) { current = { pos: cached }; fillInputs(); render(); }
-  status('Leyendo ' + type.toUpperCase() + ' #' + id + ' en Ethereum…');
+  status('Leyendo ' + type.toUpperCase() + ' #' + id + ' en ' + netName + '…');
   $('btnLoad').disabled = true;
   try {
-    const pos = await readAny(type, id, type === 'v2' ? wallet : '');
+    const pos = await readAny(type, id, type === 'v2' ? wallet : '', net);
     store.set('pos:' + pos.id, pos);
-    store.set('last', type + ':' + id);
+    store.set('last', k);
     current = { pos };
-    addSaved(type + ':' + id, '(' + type.toUpperCase() + ') ' + pos.t0.symbol + '/' + pos.t1.symbol + ' ' + (pos.fee / 10000) + '%');
+    addSaved(k, '(' + (net === 'eth' ? '' : netName + ' · ') + type.toUpperCase() + ') ' + pos.t0.symbol + '/' + pos.t1.symbol + ' ' + (pos.fee / 10000) + '%');
     fillInputs(); render();
     persistEntry();
     status('Actualizado: ' + (pos.shareLabel ? pos.shareLabel + '. ' : '') + 'bloque ' + pos.block.toLocaleString('es-VE') + ', ' + new Date(pos.ts * 1000).toLocaleString('es-VE') + '.');
   } catch (e) {
-    const net = /failed to fetch|networkerror|load failed|rpc http/i.test(String(e && e.message));
-    status('No se pudo leer la posición: ' + (net ? 'no hay conexión con los nodos de Ethereum. Si estás en la vista previa del chat, ábrela en tu navegador (la vista previa bloquea internet).' : e.message) + (cached ? ' Se muestran los últimos datos guardados.' : ''), true);
+    const isNet = /failed to fetch|networkerror|load failed|rpc http/i.test(String(e && e.message));
+    status('No se pudo leer la posición: ' + (isNet ? 'no hay conexión con los nodos de ' + netName + '. Si estás en la vista previa del chat, ábrela en tu navegador (la vista previa bloquea internet).' : e.message) + (cached ? ' Se muestran los últimos datos guardados.' : ''), true);
   } finally { $('btnLoad').disabled = false; }
 }
 
@@ -767,10 +835,11 @@ function render() {
     ['Precio USD ' + B, usd(m.baseUsd)], ['Precio USD ' + Q, usd(m.quoteUsd)],
     ['Días abierta', days ? nf(2).format(days) : '—'],
     ['Liquidez', Number(pos.liquidity).toLocaleString('es-VE')],
+    ['Red', pos.netName || 'Ethereum'],
     ['Dueño', pos.owner.slice(0, 6) + '…' + pos.owner.slice(-4)],
   ];
   $('facts').replaceChildren(...facts.map(([k, v]) => { const d = document.createElement('div'); const dt = document.createElement('dt'); dt.textContent = k; const dd = document.createElement('dd'); dd.textContent = v; d.append(dt, dd); return d; }));
-  txt('readAt', 'Leído on-chain en el bloque ' + pos.block.toLocaleString('es-VE') + ' (' + new Date(pos.ts * 1000).toLocaleString('es-VE') + '). Pool ' + pos.pool.slice(0, 6) + '…' + pos.pool.slice(-4) + '.');
+  txt('readAt', 'Leído on-chain en ' + (pos.netName || 'Ethereum') + ', bloque ' + pos.block.toLocaleString('es-VE') + ' (' + new Date(pos.ts * 1000).toLocaleString('es-VE') + '). Pool ' + pos.pool.slice(0, 6) + '…' + pos.pool.slice(-4) + '.');
   drawDonut(m, B, Q, c.collected);
   renderTokenYield(m, B, Q, days, c.collected);
   m.collected = c.collected || 0;
@@ -908,9 +977,10 @@ $('btnWallet').addEventListener('click', async () => {
   const w = $('wallet').value.trim();
   if (!/^0x[0-9a-fA-F]{40}$/.test(w)) { status('Dirección de wallet no válida.', true); return; }
   store.set('wallet', w);
-  status('Buscando posiciones v3 y v4 de la wallet…');
+  status('Buscando posiciones v3 y v4 de la wallet en ' + (NET_NAMES[$('pnet').value] || '') + '…');
   const box = $('found'); box.replaceChildren();
-  const [r3, r4] = await Promise.allSettled([positionsOf(w), positionsOfV4(w)]);
+  const net = $('pnet').value;
+  const [r3, r4] = await Promise.allSettled([positionsOf(w, net), positionsOfV4(w, net)]);
   const list = [];
   if (r3.status === 'fulfilled') r3.value.forEach((p) => list.push(Object.assign({ v: 'v3' }, p)));
   if (r4.status === 'fulfilled') r4.value.forEach((p) => list.push(Object.assign({ v: 'v4' }, p)));
@@ -918,14 +988,14 @@ $('btnWallet').addEventListener('click', async () => {
   list.forEach((p) => {
     const c = document.createElement('span'); c.className = 'chip';
     c.textContent = '(' + p.v.toUpperCase() + ') #' + p.id + (p.pair ? ' · ' + p.pair : '') + ' · ' + nf(2).format(p.fee / 10000) + '% · ' + (p.active ? 'activa' : 'vacía');
-    c.addEventListener('click', () => { setSel(p.v + ':' + p.id); load(p.v + ':' + p.id); });
+    c.addEventListener('click', () => { const kk = makeKey(net, p.v, p.id); setSel(kk); load(kk); });
     box.appendChild(c);
   });
   const errs = [];
   if (r3.status === 'rejected') errs.push('v3: ' + r3.reason.message);
   if (r4.status === 'rejected') errs.push('v4: ' + r4.reason.message + ' (la búsqueda v4 usa Blockscout; puedes cargar la posición escribiendo su ID)');
   const n3 = list.filter((p) => p.v === 'v3').length, n4 = list.filter((p) => p.v === 'v4').length;
-  status((list.length ? 'Encontradas ' + n3 + ' posiciones v3 y ' + n4 + ' v4. Pulsa una para cargarla.' : 'Esta wallet no tiene posiciones Uniswap v3 ni v4.') + (errs.length ? ' No se pudo buscar en ' + errs.join(' · ') : ''), errs.length > 0 && !list.length);
+  status((list.length ? 'Encontradas: ' + n3 + ' en v3 y ' + n4 + ' en v4. Pulsa una para cargarla.' : 'Esta wallet no tiene posiciones Uniswap v3 ni v4 en ' + (NET_NAMES[net] || net) + '.') + (errs.length ? ' No se pudo buscar en ' + errs.join(' · ') : ''), errs.length > 0 && !list.length);
 });
 const bind = (id, key, num) => $(id).addEventListener('change', () => {
   if (!current) return; const v = $(id).value;
